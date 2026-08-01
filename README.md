@@ -29,7 +29,7 @@ This repository contains code and figures for our paper:
 📂 [data](/data) contains all data required for analysis\
   ⊢ 💾 intcal20.csv\
   ⊢ 💾 radiocarbon.csv\
-  ⊢ output records
+  ⊢ output records\
 📂 [figures](/figures) contains all figures included in the paper\
 📂 [manuscript](/manuscript) contains the pre-print\
   ⊢ 📄 [bibliography.bib](/manuscript/bibliography.bib)\
