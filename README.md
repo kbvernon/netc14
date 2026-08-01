@@ -36,11 +36,11 @@ This repository contains code and figures for our paper:
   ⊢ 📄 [manuscript.qmd](/manuscript/manuscript.qmd)\
   ⊢ 📄 [manuscript.pdf](/manuscript/manuscript.pdf)\
 📂 [R](/R) code for preparing data and conducting analysis, including\
-  ⊢ 📄 [00-download-c14-data.R](/R/download-c14-data.R) downloads actual 
+  ⊢ 📄 [00-download-c14-data.R](/R/00-download-c14-data.R) downloads actual 
 radiocarbon samples used in the Heaton and Price papers.\
-  ⊢ 📄 [00-download-intcal20.R](/R/download-intcal20.R) downloads the IntCal20
+  ⊢ 📄 [00-download-intcal20.R](/R/00-download-intcal20.R) downloads the IntCal20
 radiocarbon calibration curve.\
-  ⊢ 📄 [00-evaluation-summary.qmd](/R/01-analysis.qmd) is for generating the 
+  ⊢ 📄 [00-evaluation-summary.qmd](/R/00-evaluation-summary.qmd) is for generating the 
 markdown list-table reported in the results\
   ⊢ 📄 [01-analysis.qmd](/R/01-analysis.qmd) is the primary analysis\
   ⊢ 📄 [02-tuning.qmd](/R/02-tuning.qmd) is for tuning hyperparameters in netc14\
