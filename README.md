@@ -36,11 +36,15 @@ This repository contains code and figures for our paper:
   ⊢ 📄 [manuscript.qmd](/manuscript/manuscript.qmd)\
   ⊢ 📄 [manuscript.pdf](/manuscript/manuscript.pdf)\
 📂 [R](/R) code for preparing data and conducting analysis, including\
-  ⊢ 📄 [01-analysis.qmd](/R/01-analysis.qmd) is the primary analysis and\
-  ⊢ 📄 [download-c14-data.R](/R/download-c14-data.R) downloads actual 
+   ⊢ 📄 [00-download-c14-data.R](/R/download-c14-data.R) downloads actual 
 radiocarbon samples used in the Heaton and Price papers.\
-  ⊢ 📄 [download-intcal20.R](/R/download-intcal20.R) downloads the IntCal20
+  ⊢ 📄 [00-download-intcal20.R](/R/download-intcal20.R) downloads the IntCal20
 radiocarbon calibration curve.\
+   ⊢ 📄 [00-evaluation-summary.qmd](/R/01-analysis.qmd) is for generating the 
+markdown list-table reported in the results\
+  ⊢ 📄 [01-analysis.qmd](/R/01-analysis.qmd) is the primary analysis\
+   ⊢ 📄 [02-tuning.qmd](/R/02-tuning.qmd) is for tuning hyperparameters in netc14\
+   ⊢ 📄 [03-timing.qmd](/R/03-timing.qmd) is crude benchmarks and\
   ⊢ Many R scripts for defining R functions used in analysis.
 
 ## 💾 Data availability
