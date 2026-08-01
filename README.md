@@ -29,22 +29,22 @@ This repository contains code and figures for our paper:
 📂 [data](/data) contains all data required for analysis\
   ⊢ 💾 intcal20.csv\
   ⊢ 💾 radiocarbon.csv\
-   ⊢ output records
+  ⊢ output records
 📂 [figures](/figures) contains all figures included in the paper\
 📂 [manuscript](/manuscript) contains the pre-print\
   ⊢ 📄 [bibliography.bib](/manuscript/bibliography.bib)\
   ⊢ 📄 [manuscript.qmd](/manuscript/manuscript.qmd)\
   ⊢ 📄 [manuscript.pdf](/manuscript/manuscript.pdf)\
 📂 [R](/R) code for preparing data and conducting analysis, including\
-   ⊢ 📄 [00-download-c14-data.R](/R/download-c14-data.R) downloads actual 
+  ⊢ 📄 [00-download-c14-data.R](/R/download-c14-data.R) downloads actual 
 radiocarbon samples used in the Heaton and Price papers.\
   ⊢ 📄 [00-download-intcal20.R](/R/download-intcal20.R) downloads the IntCal20
 radiocarbon calibration curve.\
-   ⊢ 📄 [00-evaluation-summary.qmd](/R/01-analysis.qmd) is for generating the 
+  ⊢ 📄 [00-evaluation-summary.qmd](/R/01-analysis.qmd) is for generating the 
 markdown list-table reported in the results\
   ⊢ 📄 [01-analysis.qmd](/R/01-analysis.qmd) is the primary analysis\
-   ⊢ 📄 [02-tuning.qmd](/R/02-tuning.qmd) is for tuning hyperparameters in netc14\
-   ⊢ 📄 [03-timing.qmd](/R/03-timing.qmd) is crude benchmarks and\
+  ⊢ 📄 [02-tuning.qmd](/R/02-tuning.qmd) is for tuning hyperparameters in netc14\
+  ⊢ 📄 [03-timing.qmd](/R/03-timing.qmd) is crude benchmarks and\
   ⊢ Many R scripts for defining R functions used in analysis.
 
 ## 💾 Data availability
