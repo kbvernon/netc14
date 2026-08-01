@@ -2,7 +2,7 @@
 
 <!-- badges: start -->
 [![Static Badge](https://img.shields.io/badge/Quarto-Paper-74AADB?style=social&logo=Quarto)](https://quarto.org)
-[![DOI]()]()
+[![DOI](https://zenodo.org/badge/1319428718.svg)](https://doi.org/10.5281/zenodo.21743118)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 <!-- badges: end -->
 
@@ -18,9 +18,9 @@ This repository contains code and figures for our paper:
 
 **Preprint**: [manuscript.pdf](/manuscript/manuscript.pdf)
 
-**Supplement**:
-[01-analysis.html](https://kbvernon.github.io/netc14/R/01-analysis.html)
-[02-tuning.html](https://kbvernon.github.io/netc14/R/02-tuning.html)
+**Supplement**:\
+[01-analysis.html](https://kbvernon.github.io/netc14/R/01-analysis.html)\
+[02-tuning.html](https://kbvernon.github.io/netc14/R/02-tuning.html)\
 [03-timing.html](https://kbvernon.github.io/netc14/R/03-timing.html)
 
 ## Contents
