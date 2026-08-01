@@ -1,0 +1,8 @@
+knitr
+carbondate
+parallel
+svglite
+torch
+sessioninfo
+rmarkdown
+quarto

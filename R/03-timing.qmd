@@ -1,0 +1,254 @@
+---
+title: "Supplement C: Compute Efficiency"
+date: today
+published-title: "COMPILED"
+format:
+  html: 
+    embed-resources: true
+    fig-align: center
+    fig-dpi: 300
+    fig-responsive: true
+    number-sections: true
+    number-depth: 3
+    toc: true
+    toc-depth: 3
+    smooth-scroll: true
+    theme: cosmo
+    highlight-style: a11y
+    code-tools: true
+    code-links:
+      - text: kbvernon/netc14
+        icon: github
+        href: https://github.com/kbvernon/netc14
+execute: 
+  echo: true
+  warning: false
+  error: false
+---
+
+```{=html}
+<style>p:has(img) { text-align: center; }</style>
+```
+
+## Introduction
+
+**Goal:** Evaluate the compute efficiency of different models over different
+sample sizes.
+
+**Data:** For model evaluation, data are simulated according to the generative
+model.
+
+**Method:** Models are timed during training.
+
+## R Preamble
+
+```{r}
+#| label: library
+library(parallel)
+library(svglite)
+```
+
+```{r}
+#| label: source-functions
+#| code-fold: true
+#| output: false
+fns <- c(
+  "constants.R",
+  "dataframe-helpers.R",
+  "plot-helpers.R",
+  "plot-theme.R"
+)
+
+lapply(file.path("R", fns), source, verbose = FALSE)
+```
+
+**Constants**
+
+```{r}
+#| label: constants
+#| file: R/constants.R
+#| eval: false
+```
+
+## Data
+
+```{r}
+#| label: intcal20
+intcal20 <- structure(
+  read.csv("data/intcal20.csv"),
+  class = c("Calibration", "data.frame"),
+  curve = "IntCal20"
+)
+
+intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
+intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+```
+
+## Timing
+
+```{r}
+#| label: model-timing
+#| output: false
+n_samples <- rep(seq(500, 5000, by = 500), each = 28)
+n_iter <- length(n_samples)
+
+# set up clusters
+clusters <- makeCluster(14)
+
+fns <- c(
+  "bgmm.R",
+  "calibrate.R",
+  "ckde.R",
+  "constants.R",
+  "dataframe-helpers.R",
+  "dpmm.R",
+  "metrics.R",
+  "mixture-helpers.R",
+  "netc14.R",
+  "sample-dates.R",
+  "simulate-chronology.R",
+  "spd.R"
+)
+
+clusterExport(
+  clusters,
+  varlist = c("fns", "intcal20", "n_samples"),
+  envir = environment()
+)
+
+clusterEvalQ(clusters, {
+  library(carbondate)
+  library(torch)
+  torch_set_num_threads(1)
+  lapply(file.path("R", fns), source)
+})
+
+# run simulations in parallel
+timing_results <- parLapply(clusters, seq_len(n_iter), \(i) {
+  set.seed(STARGATE + i)
+
+  # scenario
+  n_years <- 3000
+  n_clusters <- 6
+  start <- sample(seq(100, 49500 - n_years), 1)
+  end <- start + n_years - 1
+
+  # simulate chronology, draw samples, and calibrate
+  chronology <- simulate_chronology(start, end, n_clusters)
+  samples <- sample_dates(chronology, n_samples[i], intcal20)
+  calibrated_dates <- calibrate(samples, intcal20)
+
+  # training
+  models <- list(
+    ckde(calibrated_dates),
+    bgmm(calibrated_dates),
+    dpmm(samples),
+    netc(calibrated_dates),
+    spd(calibrated_dates)
+  )
+
+  # collect and return
+  elapsed <- sapply(models, attr, which = "elapsed")
+
+  data.frame(
+    iter = i,
+    model = c("CKDE", "BGMM", "DPMM", "NetC14", "SPD"),
+    start = start,
+    n_years = n_years,
+    n_samples = n_samples[i],
+    n_clusters = n_clusters,
+    elapsed = elapsed
+  )
+})
+
+# close parallel processes and collect results
+stopCluster(clusters)
+timing_results <- do.call(rbind, timing_results)
+```
+
+Save results.
+
+```{r}
+#| label: save-timings
+write.csv(
+  timing_results,
+  "data/timing-results.csv",
+  row.names = FALSE
+)
+```
+
+## Results
+
+```{r}
+#| label: plot-elapsed
+#| code-fold: true
+#| output: false
+svglite(
+  filename = "figures/evaluate-timing.svg",
+  width = 5.5,
+  height = 3
+)
+
+xy <- aggregate(
+  elapsed ~ model + n_samples,
+  FUN = median,
+  data = timing_results
+)
+
+xlim <- range(xy[["n_samples"]])
+ylim <- range(xy[["elapsed"]])
+
+layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
+
+par(defaults)
+par(mai = c(0.5, 0.5, 0, 0))
+
+new_plot(xlim, ylim)
+add_grid()
+
+for (mdl in unique(xy[["model"]])) {
+  i <- which(xy[["model"]] == mdl)
+  x <- xy[["n_samples"]][i]
+  y <- xy[["elapsed"]][i]
+  z <- xy[["n_samples"]][i]
+
+  clr <- theme(mdl)
+  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
+
+  lines(x, y, col = clr, lwd = 0.5)
+  points(x, y, pch = 21, col = clr, bg = cbg, cex = 1)
+}
+
+x_axis()
+y_axis()
+
+x_title("N SAMPLES")
+y_title("ELAPSED [s]")
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+add_legend(
+  x = 0,
+  y = 0.8,
+  legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
+  col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  pch = 21,
+  pt.cex = 1.1,
+  lwd = 0.5
+)
+
+dev.off()
+```
+
+::: {#evaluate-objectives-timing}
+![](/figures/evaluate-timing.svg){width=75%}
+:::
+
+## Session Info
+
+```{r}
+#| label: session-info
+sessioninfo::session_info(pkgs = "attached")
+```

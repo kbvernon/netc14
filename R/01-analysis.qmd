@@ -1,0 +1,1253 @@
+---
+title: "Supplement A: Modeling Radiocarbon Dates"
+date: today
+published-title: "COMPILED"
+format:
+  html: 
+    embed-resources: true
+    fig-align: center
+    fig-dpi: 300
+    fig-responsive: true
+    number-sections: true
+    number-depth: 3
+    toc: true
+    toc-depth: 3
+    smooth-scroll: true
+    theme: cosmo
+    highlight-style: a11y
+    code-tools: true
+    code-links:
+      - text: kbvernon/netc14
+        icon: github
+        href: https://github.com/kbvernon/netc14
+execute: 
+  echo: true
+  warning: false
+  error: false
+---
+
+```{r}
+#| label: time-code-chunks
+#| echo: false
+# we are deep into overkill territory here
+knitr::knit_hooks$set(
+  time_it = local({
+    function(before, options) {
+      if (before) {
+        assign('.start_time', Sys.time(), envir = .GlobalEnv)
+      } else {
+        proc_time <- difftime(Sys.time(), .start_time, units = "secs")
+        proc_time <- round(as.numeric(proc_time), 2)
+
+        mins <- proc_time %/% 60
+        secs <- proc_time %% 60
+
+        proc_time <- if (mins > 0) {
+          sprintf("%dm %.1fs", mins, secs)
+        } else {
+          sprintf("%.1fs", secs)
+        }
+
+        sprintf(
+          "<p class='chunk-timing'>%s</p>",
+          paste0("Code execution time: ", proc_time)
+        )
+      }
+    }
+  })
+)
+```
+
+```{=html}
+<style>
+.code-copy-outer-scaffold:has(.chunk-timing) {
+  position: relative;
+}
+
+.code-copy-outer-scaffold:has(.chunk-timing) .sourceCode.cell-code {
+  margin-bottom: 2em;
+}
+
+.chunk-timing {
+  position: absolute;
+  bottom: -1.5em;
+  right: 0;
+  text-align: right;
+  font-size: 0.75em;
+  margin: 0;
+  padding: 0;
+  color: rgba(150, 150, 150, 1);
+}
+
+p:has(img) { 
+  text-align: center; 
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() { 
+  document.querySelectorAll(".chunk-timing").forEach(el => {
+    const code = el.closest(".cell").querySelector(".code-copy-outer-scaffold");
+    if (code) code.appendChild(el);    
+  });
+});  
+</script>
+```
+
+## Introduction
+
+**Goal:** Train a neural network to calibrate and summarize radiocarbon samples.
+
+**Data:** For model evaluation, data are simulated according to the generative 
+model. For comparative purposes, we also apply models to four real world 
+datasets.
+
+**Method:** Simulations are used to evaluate different modeling techniques,
+allowing us to compare estimates against true and known ages and densities.
+
+## R Preamble
+
+```{r}
+#| label: library
+library(carbondate)
+library(parallel)
+library(svglite)
+library(torch)
+```
+
+**Generic Methods**
+
+In this analysis, we rely heavily on R's S3 system of generics and methods. This
+allows us to simplify the API, making it more interpretable, but more 
+importantly, it makes programming simulations much, much easier. Crucially, we
+rely on four generic methods provided by base R: `print()`, `plot()`, 
+`predict()`, and `density()`. The `predict()` method is implemented for models 
+to estimate the true age of each radiocarbon sample. The `density()` method is 
+implemented for models to estimate the true probability distribution. The print 
+methods are mainly there for inspecting the models interactively. The plot 
+methods help ensure consistent theming for figures.
+
+```{r}
+#| label: source-functions
+#| output: false
+fns <- c(
+  "bgmm.R",
+  "calibrate.R",
+  "ckde.R",
+  "constants.R",
+  "dataframe-helpers.R",
+  "dpmm.R",
+  "metrics.R",
+  "mixture-helpers.R",
+  "netc14.R",
+  "plot-calibration.R",
+  "plot-density.R",
+  "plot-helpers.R",
+  "plot-theme.R",
+  "print.R",
+  "sample-dates.R",
+  "simulate-chronology.R",
+  "spd.R"
+)
+
+lapply(file.path("R", fns), source, verbose = FALSE)
+```
+
+**Constants**
+
+```{r}
+#| label: constants
+#| file: R/constants.R
+#| eval: false
+```
+
+## Data
+
+### Load Calibration
+
+For this modeling exercise, we use the most recent version of IntCal or 
+IntCal20. Note that we convert means and errors to fraction modern (`f14c_mu` 
+and `f14c_sigma`) since it is more reliable for older samples that may have 
+asymmetric uncertainty around the mean.
+
+```{r}
+#| label: intcal20
+intcal20 <- structure(
+  read.csv("data/intcal20.csv"),
+  class = c("Calibration", "data.frame"),
+  curve = "IntCal20"
+)
+
+intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
+intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+
+intcal20
+```
+
+### Simulate Chronology
+
+We refer to the underlying probability density or age distribution as a 
+"chronology." To simulate a chronology, we randomly sample mixture parameters 
+from various distributions: Gamma for the weights and standard deviations, 
+Discrete Uniform for the means. We then evaluate the mixture PDF over the entire 
+interval at an annual resolution and then normalize those probabilities to sum 
+to one, in effect generating a truncated and discrete empirical distribution. 
+
+```{r}
+#| label: function-simulate-chronology
+#| file: R/simulate-chronology.R
+#| code-fold: true
+#| code-summary: R/simulate-chronology.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: example-chronology
+set.seed(STARTREK)
+
+chronology <- simulate_chronology(500, 3500, 5)
+chronology
+```
+
+### Sample Dates
+
+Following the generative model outlined in the main text, we sample years from 
+the empirical distribution using inverse transform sampling and then use those 
+years to sample radiocarbon determinations (measurements or ages) from the 
+calibration curve.
+
+This and the above `simulate_chronology()` function are based on 
+`CreateDataVaryWeight()` used in (Heaton 2021, [github link](https://github.com/TJHeaton/NonparametricCalibration/blob/main/SimStudyFuncsFinal.R)).
+
+```{r}
+#| label: function-sample-dates
+#| file: R/sample-dates.R
+#| code-fold: true
+#| code-summary: R/sample-dates.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: example-sample
+set.seed(STARGATE)
+
+samples <- sample_dates(chronology, 25, intcal20)
+samples
+```
+
+### Calibrate Samples
+
+Most of the algorithms outlined below rely on the calibrated dates as the main 
+data for modeling.
+
+```{r}
+#| label: function-calibrate
+#| file: R/calibrate.R
+#| code-fold: true
+#| code-summary: R/calibrate.R
+#| eval: false
+```
+
+```{r}
+#| label: calibrate-dates
+calibrated_dates <- calibrate(samples, intcal20)
+calibrated_dates
+```
+
+## Models
+
+Here we specify our modeling algorithms for calibrating and summarizing 
+radiocarbon dates. 
+
+### Summed Probability Distribution
+
+```{r}
+#| label: spd
+#| file: R/spd.R
+#| code-fold: true
+#| code-summary: R/spd.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: spd-example
+#| time_it: true
+spd(calibrated_dates)
+```
+
+### Composite Kernel Density
+
+There are a variety of KDE methods for summarizing C14 samples (e.g. Bronk 
+Ramsey 2017 and McLaughlin 2018), but we use the simplest possible approach 
+here, just sampling from each sample's posterior and then running KDE on those 
+samples, iterating this some number of times (500 by default). The final 
+estimate of the true density is just the column means. 
+
+```{r}
+#| label: ckde
+#| file: R/ckde.R
+#| code-fold: true
+#| code-summary: R/ckde.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: ckde-example
+#| time_it: true
+ckde(calibrated_dates)
+```
+
+### Bayesian Gaussian Mixture Model
+
+This is roughly equivalent to the model proposed by Price et al (2021). It uses  
+equivalent priors and log posterior, but we use a more conservative Gamma on the 
+variance, moving the mean closer to one hundred years (Price's hypers put that 
+closer to fifty years). There are three additional changes that are worth 
+mentioning. First, to sample the posterior distribution, it uses a pure R 
+implementation of Metropolis-within-Gibbs MCMC with block proposals rather than 
+Stan's Hamiltonian. Second, the Price model uses GMM with EM to initialize 
+parameters, but we use a simpler kmeans approach instead, fitting kmeans with
+different numbers of clusters, then selecting the one with the highest BIC 
+score. Finally, and perhaps most importantly, we forego sampling means in MCMC,
+opting instead to keep the initialized kmeans centers fixed instead.
+
+```{r}
+#| label: bgmm
+#| file: R/bgmm.R
+#| code-fold: true
+#| code-summary: R/bgmm.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: bgmm-example
+#| time_it: true
+bgmm(calibrated_dates)
+```
+
+### Dirichlet Process Mixture Model
+
+We use the DPMM with Polya Urn sampling as recommended by Heaton in the
+[`carbondate` documentation](https://tjheaton.github.io/carbondate/reference/PolyaUrnBivarDirichlet.html):
+
+> The library provides two slightly-different update schemes for the MCMC. In
+> this particular function, updating of the DPMM is achieved by a Polya Urn
+> approach (Neal 2000) This is our recommended updating approach based on
+> testing.
+
+Heaton also recommends an enormous number of iterations - the default is one
+hundred thousand. This, however, is computationally prohibitive for any decently
+large sample. That is why the simulation in (Heaton 2021) uses only 10,000
+iterations, which we follow here.
+
+```{r}
+#| label: dpmm
+#| file: R/dpmm.R
+#| code-fold: true
+#| code-summary: R/dpmm.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: dpmm-example
+#| time_it: true
+dpmm(samples)
+```
+
+### Gaussian Mixture Neural Network
+
+NetC14 is a Gaussian Mixture Neural Network. To define that network, we first 
+implement torch modules for the model's forward pass and custom loss. We then 
+wrap these in a single model function that runs all the training logic, 
+including back-propagation. 
+
+```{r}
+#| label: netc14
+#| file: R/netc14.R
+#| code-fold: true
+#| code-summary: R/netc14.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: netc14-example
+#| time_it: true
+netc(calibrated_dates)
+```
+
+## Example
+
+Here is a complete example of a single simulation.
+
+```{r}
+#| label: example
+#| time_it: true
+set.seed(STARTREK)
+
+start <- 500
+end <- 3500
+n_clusters <- 5
+n_samples <- 1250
+
+chronology <- simulate_chronology(start, end, n_clusters)
+samples <- sample_dates(chronology, n_samples, calibration = intcal20)
+calibrated_dates <- calibrate(samples, intcal20)
+
+models <- list(
+  spd = spd(calibrated_dates),
+  ckde = ckde(calibrated_dates),
+  bgmm = bgmm(calibrated_dates),
+  dpmm = dpmm(samples),
+  netc = netc(calibrated_dates),
+  oracle = chronology
+)
+
+densities <- lapply(models, density, years = seq(start, end))
+```
+
+```{r}
+#| label: plot-example-densities
+#| code-fold: true
+#| output: false
+svglite(
+  filename = "figures/example-densities.svg",
+  width = 5.5,
+  height = 4
+)
+
+layout(
+  matrix(c(1, 0, 0, 0, 0, 0, 2, 0, 3), nrow = 3, ncol = 3, byrow = TRUE),
+  heights = c(0.7, 0.08, 1),
+  widths = c(1, 0.01, 0.23)
+)
+
+par(defaults)
+par(mai = c(0, 0.65, 0, 0))
+
+plot(
+  subset(intcal20, cal_age <= end & cal_age >= start),
+  xlab = NULL,
+  xaxs = "i",
+  yaxs = "i"
+)
+
+par(mai = c(0.5, 0.65, 0, 0))
+
+with(
+  rbind(densities[["dpmm"]], densities[["netc"]]),
+  new_plot(
+    xlim = c(start, end),
+    ylim = c(min(conf_lo, na.rm = TRUE), max(conf_hi, na.rm = TRUE)),
+    xaxs = "i",
+    yaxs = "i"
+  )
+)
+
+x_axis()
+y_axis()
+
+x_title("Years Before Present (t)")
+y_title("Density", line = 2.5)
+
+add_grid()
+
+with(densities, {
+  plot(bgmm, add = TRUE, col = theme("BGMM"))
+  plot(dpmm, add = TRUE, col = theme("DPMM"), se = TRUE)
+  plot(netc, add = TRUE, col = theme("NetC14"), se = TRUE)
+  plot(ckde, add = TRUE, col = theme("CKDE"))
+  plot(spd, add = TRUE, col = theme("SPD"), lty = "dotted")
+  plot(oracle, add = TRUE, col = theme("Oracle"), lwd = 2, lty = "dashed")
+})
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+add_legend(
+  "center",
+  legend = c("True p(t)", "SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+  col = theme("Oracle", "SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+  text.col = theme("Oracle", "SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+  lwd = rep(1.2, 6),
+  lty = c("dashed", "dotted", "solid", "solid", "solid", "solid")
+)
+
+dev.off()
+```
+
+:::{#example-densities}
+![](/figures/example-densities.svg){width=75%}
+:::
+
+Note: the above figure is pretty noisy, so we show confidence intervals only for 
+the DPMM and NetC14.
+
+**Estimate age**
+
+Getting the posterior distribution over ages for each sample is just a matter
+of multiplying the chronology across each row of the calibration matrix and then
+dividing each row by its sum:
+
+```{r}
+#| label: example-posterior
+v <- densities[["netc"]][["density"]]
+q <- t(t(calibrated_dates) * v)
+q <- q / rowSums(q)
+```
+
+The figure below demonstrates this. The blue line shows the calibration 
+likelihood of a sample, the red dashed line shows the prior, i.e., the 
+chronology or density estimated by the mixture, and the black line shows the 
+posterior, or the product of the likelihood and the prior. The crucial result is 
+to concentrate the probability mass at the nearest mode in the density, which is
+presumably where the sample comes from.
+
+```{r}
+#| label: plot-example-age
+#| code-fold: true
+#| output: false
+years <- seq(start, end)
+curve <- subset(intcal20, cal_age >= start & cal_age <= end)
+
+Si <- 2700
+
+f14c_mu <- subset(curve, cal_age == Si)[["f14c_mu"]]
+f14c_sigma <- f14c_mu * 25 / LIBBY
+
+Ci <- calibrate_sample(f14c_mu, f14c_sigma, curve)
+Ci <- Ci / sum(Ci)
+
+modes <- c(2475, 2725)
+v <- 0.2 * dnorm(years, modes[1], 40) + 0.8 * dnorm(years, modes[2], 40)
+v <- v / sum(v)
+
+Pi <- Ci * v
+Pi <- Pi / sum(Pi)
+
+support <- which(Ci > max(Ci) * 0.0001 | v > max(v) * 0.01)
+xlim <- c(years[min(support)], years[max(support)])
+
+svglite(
+  filename = "figures/example-age.svg",
+  width = 5.5,
+  height = 4
+)
+
+layout(
+  matrix(c(1, 0, 0, 0, 0, 0, 2, 0, 3), nrow = 3, ncol = 3, byrow = TRUE),
+  heights = c(0.7, 0.08, 1),
+  widths = c(1, 0.01, 0.23)
+)
+
+par(defaults)
+par(mai = c(0, 0.65, 0, 0))
+
+plot(
+  subset(curve, cal_age <= xlim[2] & cal_age >= xlim[1]),
+  xlab = NULL,
+  xaxs = "i",
+  yaxs = "i"
+)
+
+par(mai = c(0.5, 0.65, 0, 0))
+
+new_plot(
+  xlim = xlim,
+  ylim = c(0, max(Ci, v, Pi) * 1.05),
+  xaxs = "i",
+  yaxs = "i"
+)
+
+x_axis()
+y_axis()
+
+x_title("Years Before Present (t)")
+y_title("Density", line = 2.5)
+
+add_grid()
+
+abline(v = Si, col = coolors("gray"), lty = "dashed", lwd = 1.1)
+text(
+  x = Si + 10,
+  y = max(Ci, v, Pi) * 1.03,
+  labels = "True age",
+  adj = c(0, 1),
+  col = coolors("gray"),
+  cex = 0.9
+)
+
+lines(years, Ci, col = coolors("blue"))
+lines(years, v, col = coolors("orange"))
+lines(years, Pi, col = coolors("brown"), lwd = 1.3)
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+add_legend(
+  "center",
+  legend = c("Likelihood", "Prior", "Posterior"),
+  col = coolors("blue", "orange", "brown"),
+  text.col = coolors("blue", "orange", "brown"),
+  lwd = c(1, 1, 1.3),
+  lty = c("solid", "solid", "solid")
+)
+
+dev.off()
+```
+
+:::{#example-age}
+![](/figures/example-age.svg){width=75%}
+:::
+
+## Evaluation
+
+We evaluate the models here against a large number of simulated chronologies and
+radiocarbon samples. To save ourselves some time, we also run these simulations
+in parallel. Generally speaking, running torch models in parallel is a bad idea 
+since torch has built-in parallelism that could lead to thread contests. We try 
+to account for this by limiting the number of threads in each parallel process 
+to one. Running my PC at full tilt on 14 of 16 cores reduces the total wall time 
+(in hours) for the evaluation by an order of magnitude.
+
+Each simulation looks like the example above, following the generative model. 
+The steps are as follows:
+
+1. Sample a starting year.
+2. Simulate a chronology.
+3. Sample dates from the chronology.
+4. Calibrate the dates.
+5. Train models with dates.
+6. Infer chronology and sample ages.
+7. Evaluate models.
+
+These steps are repeated for each simulation. Currently, there are 3 (n_years) * 
+3 (n_samples) * 3 (n_clusters) = 27 starting conditions that are repeated 28 
+times each, resulting in 756 unique simulations with randomization.
+
+**Metrics**
+
+```{r}
+#| label: metrics
+#| file: R/metrics.R
+#| code-fold: true
+#| code-summary: R/metrics.R
+#| eval: false
+```
+
+**Simulations**
+
+```{r}
+#| label: model-evaluation
+#| time_it: true
+#| output: false
+# define starting conditions for simulations
+evaluation_grid <- expand.grid(
+  n_years = c(500, 2500, 12500),
+  n_samples = c(50, 250, 1250),
+  n_clusters = c(1, 3, 9)
+)
+
+# repeat each combination n times
+i <- rep(seq_len(nrow(evaluation_grid)), each = 28)
+evaluation_grid <- evaluation_grid[i, ]
+rownames(evaluation_grid) <- NULL
+
+n_iter <- nrow(evaluation_grid)
+
+# set up clusters
+clusters <- makeCluster(14)
+
+fns <- c(
+  "bgmm.R",
+  "calibrate.R",
+  "ckde.R",
+  "constants.R",
+  "dataframe-helpers.R",
+  "dpmm.R",
+  "metrics.R",
+  "mixture-helpers.R",
+  "netc14.R",
+  "sample-dates.R",
+  "simulate-chronology.R",
+  "spd.R"
+)
+
+clusterExport(
+  clusters,
+  varlist = c("fns", "evaluation_grid", "intcal20"),
+  envir = environment()
+)
+
+clusterEvalQ(clusters, {
+  library(carbondate)
+  library(torch)
+  torch_set_num_threads(1)
+  lapply(file.path("R", fns), source)
+})
+
+# run simulations in parallel
+evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
+  set.seed(STARTREK + i)
+
+  # scenario
+  n_years <- evaluation_grid[["n_years"]][i]
+  n_clusters <- evaluation_grid[["n_clusters"]][i]
+  n_samples <- evaluation_grid[["n_samples"]][i]
+  start <- sample(seq(100, 49500 - n_years), 1)
+  end <- start + n_years - 1
+
+  # simulate chronology, draw samples, and calibrate
+  chronology <- simulate_chronology(start, end, n_clusters)
+  samples <- sample_dates(chronology, n_samples, intcal20)
+  calibrated_dates <- calibrate(samples, intcal20)
+
+  # training
+  models <- list(
+    ckde(calibrated_dates),
+    bgmm(calibrated_dates),
+    dpmm(samples),
+    netc(calibrated_dates),
+    spd(calibrated_dates)
+  )
+
+  # evaluation
+  years <- seq(start, end)
+  true_ages <- samples[["cal_age"]]
+
+  evaluations <- lapply(models, \(.model) {
+    .density <- density(.model, years)[["density"]]
+    .ages <- predict(.model, calibrated_dates)
+
+    data.frame(
+      tvd = tvd(.density, chronology),
+      wd = wd(.density, chronology),
+      mae = mae(.ages, true_ages),
+      mse = mse(.ages, true_ages)
+    )
+  })
+
+  evaluations <- do.call(rbind, evaluations)
+
+  # baseline
+  oracle_ages <- predict(chronology, calibrated_dates)
+  mae_oracle <- mae(oracle_ages, true_ages)
+  mse_oracle <- mse(oracle_ages, true_ages)
+
+  # collect and return
+  e_clusters <- vapply(models, count_components, integer(1))
+  elapsed <- sapply(models, attr, which = "elapsed")
+
+  sim <- data.frame(
+    iter = i,
+    model = c("CKDE", "BGMM", "DPMM", "NetC14", "SPD"),
+    start = start,
+    n_years = n_years,
+    n_samples = n_samples,
+    n_clusters = n_clusters,
+    e_clusters = e_clusters,
+    mae_oracle = mae_oracle,
+    mse_oracle = mse_oracle,
+    elapsed = elapsed
+  )
+
+  cbind(sim, evaluations)
+})
+
+# close parallel processes and collect results
+stopCluster(clusters)
+evaluation_results <- do.call(rbind, evaluation_results)
+```
+
+Save results.
+
+```{r}
+#| label: save-evaluation
+write.csv(
+  evaluation_results,
+  "data/evaluation-results.csv",
+  row.names = FALSE
+)
+```
+
+## Results
+
+```{r}
+#| label: prepare-results
+evaluation_results <- transform(
+  evaluation_results,
+  recovery = (mae - mae_oracle) / mae_oracle
+)
+```
+
+These visualizations emphasize that radiocarbon dating is a multi-objective 
+problem involving calibration (or age estimation) and summarization (or density
+estimation) and that these objectives can sometimes trade-off each other, 
+especially for mixture models where there is non-identifiability. The x-axis 
+measures how well a model does at *summarizing* dates (at estimating the true 
+density). TVD refers to "Total Variation Distance", which measures distance 
+between two probability distributions. The y-axis measures how well a model does 
+at *calibrating* dates (at estimating the true age of each sample). MAE is L1 
+loss or "Mean Absolute Error".
+
+Recovery refers to proportional improvement in calibration over an "oracle" 
+model that knows the true age distribution or chronology.
+
+$$
+\rho = \frac{\text{Model} - \text{Oracle}}{\text{Oracle}}
+$$
+
+The idea behind recovery is to identify a theoretical limit on model 
+performance, like even if you knew the true density, how much error would remain 
+in trying to estimate ages given calibration curve and measurement uncertainty?
+
+**Number of Samples**
+
+Points are median values across simulations and sample sizes.
+
+```{r}
+#| label: plot-evaluate-n-samples
+#| code-fold: true
+#| output: false
+xy <- aggregate(
+  cbind(tvd, recovery) ~ model + n_samples,
+  FUN = median,
+  data = evaluation_results
+)
+
+svglite(
+  filename = "figures/evaluate-objectives-nsamples.svg",
+  width = 5.5,
+  height = 3
+)
+
+xlim <- range(xy[["tvd"]])
+ylim <- range(xy[["recovery"]])
+
+layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
+
+par(defaults)
+par(mai = c(0.5, 0.5, 0, 0))
+
+new_plot(xlim, ylim)
+add_grid()
+
+for (mdl in unique(xy[["model"]])) {
+  i <- which(xy[["model"]] == mdl)
+  x <- xy[["tvd"]][i]
+  y <- xy[["recovery"]][i]
+  z <- xy[["n_samples"]][i]
+
+  clr <- theme(mdl)
+  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
+  cex <- c("50" = 1.0, "250" = 1.3, "1250" = 1.7)[as.character(z)]
+
+  lines(x, y, col = clr, lwd = 0.5)
+  points(x, y, pch = 21, col = clr, bg = cbg, cex = cex)
+}
+
+x_axis()
+y_axis()
+
+x_title("SUMMARIZING [TVD]")
+y_title("CALIBRATING [MAE-Recovery]")
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+lg <- add_legend(
+  x = 0,
+  y = 1,
+  legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
+  col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  pch = 21,
+  pt.cex = 1.1,
+  lwd = 0.5
+)
+
+text(
+  x = lg[["rect"]][["left"]] + 0.01,
+  y = lg[["rect"]][["top"]] + 0.01,
+  labels = "Models",
+  adj = 0,
+  col = coolors("gray")
+)
+
+lg <- add_legend(
+  x = 0,
+  y = 0.5,
+  legend = c(50, 250, 1250),
+  pt.bg = coolors("gray", shade = -0.6),
+  col = coolors("gray"),
+  text.col = coolors("gray"),
+  pch = 21,
+  pt.cex = c(1.0, 1.3, 1.7)
+)
+
+text(
+  x = lg[["rect"]][["left"]] + 0.01,
+  y = lg[["rect"]][["top"]] + 0.01,
+  labels = "N Samples",
+  adj = 0,
+  col = coolors("gray")
+)
+
+dev.off()
+```
+
+:::{#evaluate-objectives-nsamples}
+![](/figures/evaluate-objectives-nsamples.svg){width=75%}
+:::
+
+**Number of Clusters**
+
+Points are median values across simulations and number of clusters.
+
+```{r}
+#| label: plot-evaluate-n-clusters
+#| code-fold: true
+#| output: false
+xy <- aggregate(
+  cbind(tvd, recovery) ~ model + n_clusters,
+  FUN = median,
+  data = evaluation_results
+)
+
+svglite(
+  filename = "figures/evaluate-objectives-nclusters.svg",
+  width = 5.5,
+  height = 3
+)
+
+xlim <- range(xy[["tvd"]])
+ylim <- range(xy[["recovery"]])
+
+layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
+
+par(defaults)
+par(mai = c(0.5, 0.5, 0, 0))
+
+new_plot(xlim, ylim)
+add_grid()
+
+for (mdl in unique(xy[["model"]])) {
+  i <- which(xy[["model"]] == mdl)
+  x <- xy[["tvd"]][i]
+  y <- xy[["recovery"]][i]
+  z <- xy[["n_clusters"]][i]
+
+  clr <- theme(mdl)
+  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
+  cex <- c("1" = 1.0, "3" = 1.3, "9" = 1.7)[as.character(z)]
+
+  lines(x, y, col = clr, lwd = 0.5)
+  points(x, y, pch = 21, col = clr, bg = cbg, cex = cex)
+}
+
+x_axis()
+y_axis()
+
+x_title("SUMMARIZING [TVD]")
+y_title("CALIBRATING [MAE-Recovery]")
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+lg <- add_legend(
+  x = 0,
+  y = 1,
+  legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
+  col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+  pch = 21,
+  pt.cex = 1.1,
+  lwd = 0.5
+)
+
+text(
+  x = lg[["rect"]][["left"]] + 0.01,
+  y = lg[["rect"]][["top"]] + 0.01,
+  labels = "Models",
+  adj = 0,
+  col = coolors("gray")
+)
+
+lg <- add_legend(
+  x = 0,
+  y = 0.5,
+  legend = c(1, 3, 9),
+  pt.bg = coolors("gray", shade = -0.6),
+  col = coolors("gray"),
+  text.col = coolors("gray"),
+  pch = 21,
+  pt.cex = c(1.0, 1.3, 1.7)
+)
+
+text(
+  x = lg[["rect"]][["left"]] + 0.01,
+  y = lg[["rect"]][["top"]] + 0.01,
+  labels = "N Clusters",
+  adj = 0,
+  col = coolors("gray")
+)
+
+dev.off()
+```
+
+:::{#evaluate-objectives-nclusters}
+![](/figures/evaluate-objectives-nclusters.svg){width=75%}
+:::
+
+## Real Data
+
+Here we reproduce the empirical examples from Price et al (2021) and Heaton 
+(2021). The first three (Raths, Iron Age, and Paleo) come from the Heaton paper. 
+The last (Tikal) comes from the Price paper.
+
+```{r}
+#| label: radiocarbon-data
+radiocarbon <- read.csv("data/radiocarbon.csv")
+
+radiocarbon <- within(radiocarbon, {
+  cal_age <- NA_integer_
+  f14c_mu <- exp(-c14_age / LIBBY)
+  f14c_sigma <- f14c_mu * c14_error / LIBBY
+})
+
+radiocarbon <- subset(
+  radiocarbon,
+  select = c(dataset, cal_age, f14c_mu, f14c_sigma)
+)
+
+class(radiocarbon) <- c("C14Samples", "data.frame")
+```
+
+```{r}
+#| label: radiocarbon-data-examples
+#| time_it: true
+datasets <- unique(radiocarbon[["dataset"]])
+results <- setNames(
+  vector("list", length = length(datasets)),
+  datasets
+)
+
+for (ds in datasets) {
+  set.seed(STARTREK)
+
+  samples <- subset(radiocarbon, dataset == ds)
+
+  # add start and end attributes to samples (this includes 100-year buffer)
+  i <- vapply(
+    samples[["f14c_mu"]],
+    \(.x) which.min(abs(.x - intcal20[["f14c_mu"]])),
+    numeric(1)
+  )
+  cal_ages <- intcal20[["cal_age"]][i]
+  time_range <- range(cal_ages) + c(-100, 100)
+
+  # make sure it does not go past modern
+  time_range <- pmax(0, time_range)
+
+  start <- time_range[1]
+  end <- time_range[2]
+
+  attr(samples, "start") <- start
+  attr(samples, "end") <- end
+
+  calibrated_dates <- calibrate(samples, intcal20)
+
+  models <- list(
+    spd = spd(calibrated_dates),
+    ckde = ckde(calibrated_dates),
+    bgmm = bgmm(calibrated_dates),
+    dpmm = dpmm(samples),
+    netc = netc(calibrated_dates)
+  )
+
+  results[[ds]] <- lapply(models, density, years = seq(start, end))
+}
+```
+
+```{r}
+#| label: plot-real-radiocarbon
+#| code-fold: true
+#| output: false
+for (i in seq_along(results)) {
+  ds <- names(results)[i]
+  densities <- results[[i]]
+
+  start <- min(densities[[1]][["cal_age"]])
+  end <- max(densities[[1]][["cal_age"]])
+
+  svglite(
+    filename = sprintf("figures/real-%s.svg", tolower(ds)),
+    width = 5.5,
+    height = 4
+  )
+
+  layout(
+    matrix(c(1, 0, 0, 0, 0, 0, 2, 0, 3), nrow = 3, ncol = 3, byrow = TRUE),
+    heights = c(0.7, 0.08, 1),
+    widths = c(1, 0.01, 0.23)
+  )
+
+  par(defaults)
+  par(mai = c(0, 0.65, 0, 0))
+
+  plot(
+    subset(intcal20, cal_age <= end & cal_age >= start),
+    xlab = NULL,
+    xaxs = "i",
+    yaxs = "i"
+  )
+
+  par(mai = c(0.5, 0.65, 0, 0))
+
+  with(do.call(rbind, densities), {
+    if (ds == "Tikal") {
+      ylim <- c(0, 0.0045)
+    } else {
+      ylim <- c(min(conf_lo, na.rm = TRUE), max(conf_hi, na.rm = TRUE))
+    }
+
+    new_plot(
+      xlim = c(start, end),
+      ylim = ylim,
+      xaxs = "i",
+      yaxs = "i"
+    )
+  })
+
+  x_axis()
+  y_axis()
+
+  x_title("Years Before Present (t)")
+  y_title("Density", line = 2.5)
+
+  add_grid()
+
+  with(densities, {
+    plot(bgmm, add = TRUE, col = coolors("brown"), se = FALSE)
+    plot(dpmm, add = TRUE, col = coolors("blue"), se = TRUE)
+    plot(netc, add = TRUE, col = coolors("orange"), se = TRUE)
+    plot(ckde, add = TRUE, col = coolors("yellow"), se = FALSE)
+    plot(spd, add = TRUE, col = coolors("gray"), lty = "dotted", se = FALSE)
+  })
+
+  par(mai = rep(0, 4))
+  new_plot(c(0, 1), c(0, 1))
+  add_legend(
+    "center",
+    legend = c("SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+    col = theme("SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+    text.col = theme("SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+    lwd = rep(1.2, 5),
+    lty = c("dotted", "solid", "solid", "solid", "solid")
+  )
+
+  dev.off()
+}
+```
+
+**Raths**
+
+:::{#real-raths}
+![](/figures/real-raths.svg){width=75%}
+:::
+
+**Iron Age**
+
+:::{#real-iron}
+![](/figures/real-iron.svg){width=75%}
+:::
+
+**PaleoIndians**
+
+:::{#real-paleo}
+![](/figures/real-paleo.svg){width=75%}
+:::
+
+**Tikal**
+
+:::{#real-tikal}
+![](/figures/real-tikal.svg){width=75%}
+:::
+
+## Session Info
+
+```{r}
+#| label: session-info
+sessioninfo::session_info(pkgs = "attached")
+```
+
+## Appendix
+
+A list of additional R functions used in this analysis and their definitions.
+
+```{r}
+#| label: function-dataframe-helpers
+#| file: R/dataframe-helpers.R
+#| code-fold: true
+#| code-summary: R/dataframe-helpers.R
+#| eval: false
+```
+
+```{r}
+#| label: function-mixture-helpers
+#| file: R/mixture-helpers.R
+#| code-fold: true
+#| code-summary: R/mixture-helpers.R
+#| eval: false
+```
+
+```{r}
+#| label: function-plot-calibration
+#| file: R/plot-calibration.R
+#| code-fold: true
+#| code-summary: R/plot-calibration.R
+#| eval: false
+```
+
+```{r}
+#| label: function-plot-density
+#| file: R/plot-density.R
+#| code-fold: true
+#| code-summary: R/plot-density.R
+#| eval: false
+```
+
+```{r}
+#| label: function-print
+#| file: R/print.R
+#| code-fold: true
+#| code-summary: R/print.R
+#| eval: false
+```
+
+```{r}
+#| label: function-plot-helpers
+#| file: R/plot-helpers.R
+#| code-fold: true
+#| code-summary: R/plot-helpers.R
+#| eval: false
+```
+
+```{r}
+#| label: function-plot-theme
+#| file: R/plot-theme.R
+#| code-fold: true
+#| code-summary: R/plot-theme.R
+#| eval: false
+```

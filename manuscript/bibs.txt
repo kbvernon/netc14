@@ -1,0 +1,5 @@
+Judith Rousseau, Kerrie Mengersen, Asymptotic Behaviour of the Posterior Distribution in Overfitted Mixture Models, Journal of the Royal Statistical Society Series B: Statistical Methodology, Volume 73, Issue 5, November 2011, Pages 689–710, https://doi.org/10.1111/j.1467-9868.2011.00781.x
+
+Chen, J., Tan, X., & Zhang, R. (2008). INFERENCE FOR NORMAL MIXTURES IN MEAN AND VARIANCE. Statistica Sinica, 18(2), 443–465. http://www.jstor.org/stable/24308490
+
+Richard J. Hathaway. "A Constrained Formulation of Maximum-Likelihood Estimation for Normal Mixture Distributions." Ann. Statist. 13 (2) 795 - 800, June, 1985. https://doi.org/10.1214/aos/1176349557

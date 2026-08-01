@@ -1,0 +1,4 @@
+/.misc/
+/.quarto/
+/R/test.R
+**/*.quarto_ipynb

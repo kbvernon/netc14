@@ -1,0 +1,429 @@
+---
+title: "Supplement B: Tuning NetC14"
+date: today
+published-title: "COMPILED"
+format:
+  html: 
+    embed-resources: true
+    fig-align: center
+    fig-dpi: 300
+    fig-responsive: true
+    number-sections: true
+    number-depth: 3
+    toc: true
+    toc-depth: 3
+    smooth-scroll: true
+    theme: cosmo
+    highlight-style: a11y
+    code-tools: true
+    code-links:
+      - text: kbvernon/netc14
+        icon: github
+        href: https://github.com/kbvernon/netc14
+execute: 
+  echo: true
+  warning: false
+  error: false
+---
+
+```{r}
+#| label: time-code-chunks
+#| echo: false
+# we are deep into overkill territory here
+knitr::knit_hooks$set(
+  time_it = local({
+    function(before, options) {
+      if (before) {
+        assign('.start_time', Sys.time(), envir = .GlobalEnv)
+      } else {
+        proc_time <- difftime(Sys.time(), .start_time, units = "secs")
+        proc_time <- round(as.numeric(proc_time), 2)
+
+        mins <- proc_time %/% 60
+        secs <- proc_time %% 60
+
+        proc_time <- if (mins > 0) {
+          sprintf("%dm %.1fs", mins, secs)
+        } else {
+          sprintf("%.1fs", secs)
+        }
+
+        sprintf(
+          "<p class='chunk-timing'>%s</p>",
+          paste0("Code execution time: ", proc_time)
+        )
+      }
+    }
+  })
+)
+```
+
+```{=html}
+<style>
+.code-copy-outer-scaffold:has(.chunk-timing) {
+  position: relative;
+}
+
+.code-copy-outer-scaffold:has(.chunk-timing) .sourceCode.cell-code {
+  margin-bottom: 2em;
+}
+
+.chunk-timing {
+  position: absolute;
+  bottom: -1.5em;
+  right: 0;
+  text-align: right;
+  font-size: 0.75em;
+  margin: 0;
+  padding: 0;
+  color: rgba(150, 150, 150, 1);
+}
+
+p:has(img) { 
+  text-align: center; 
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() { 
+  document.querySelectorAll(".chunk-timing").forEach(el => {
+    const code = el.closest(".cell").querySelector(".code-copy-outer-scaffold");
+    if (code) code.appendChild(el);    
+  });
+});  
+</script>
+```
+
+## Introduction
+
+**Goal:** Optimize NetC14 hyperparameters $\pi$ and $\gamma$ - sparsemax 
+temperature and weight on precision penalty - with respect to model performance 
+in (i) mean absolute error (MAE) of calibration (or error in estimating true 
+ages of samples) and (ii) total variation distance of summary (or error in 
+estimating true density from which samples are drawn).
+
+**Data:** For model tuning, data are simulated according to the generative 
+model.
+
+**Method:** We sweep a fixed grid of ($\pi$, $\gamma$) configurations against a
+fixed panel of simulated chronologies, scoring every configuration against the 
+same set of chronologies to focus on variance across configurations. 
+
+## R Preamble
+
+```{r}
+#| label: dependencies
+#| output: false
+library(parallel)
+library(svglite)
+library(torch)
+
+fns <- c(
+  "calibrate.R",
+  "constants.R",
+  "metrics.R",
+  "mixture-helpers.R",
+  "plot-helpers.R",
+  "plot-theme.R",
+  "print.R",
+  "sample-dates.R",
+  "simulate-chronology.R",
+  "spd.R"
+)
+
+lapply(file.path("R", fns), source, verbose = FALSE)
+```
+
+**Constants**
+
+```{r}
+#| label: constants
+#| file: R/constants.R
+#| eval: false
+```
+
+## Data
+
+```{r}
+#| label: intcal20
+intcal20 <- structure(
+  read.csv("data/intcal20.csv"),
+  class = c("Calibration", "data.frame"),
+  curve = "IntCal20"
+)
+
+intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
+intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+```
+
+The tuning grid crosses $\pi \times \gamma$ configurations. The chronology grid 
+crosses problem size, sample count, and mixture complexity scenarios. Every 
+configuration is evaluated against every chronological scenario.
+
+```{r}
+#| label: tuning-grid
+tuning_grid <- expand.grid(
+  pi = seq(0.5, 2.0, by = 0.25),
+  gamma = seq(0.5, 2.5, by = 0.25)
+)
+
+evaluation_grid <- expand.grid(
+  n_years = c(500, 2500, 12500) - 1,
+  n_samples = c(50, 250, 1250),
+  n_clusters = c(1, 3, 9)
+)
+
+n_configs <- nrow(tuning_grid)
+n_scenarios <- nrow(evaluation_grid)
+```
+
+## Tuning
+
+To make this loop as efficient as possible, we precompute the chronologies and
+draw samples from them.
+
+```{r}
+#| label: simulation-loop
+#| output: false
+#| time_it: true
+simulations <- vector("list", n_scenarios)
+
+for (i in seq_len(n_scenarios)) {
+  set.seed(STARGATE + i)
+
+  # scenario
+  n_years <- evaluation_grid[["n_years"]][i]
+  n_clusters <- evaluation_grid[["n_clusters"]][i]
+  n_samples <- evaluation_grid[["n_samples"]][i]
+  start <- sample(seq(100, 49500 - n_years), 1)
+  end <- start + n_years
+
+  # simulate chronology and draw samples
+  chronology <- simulate_chronology(start, end, n_clusters)
+  samples <- sample_dates(chronology, n_samples, intcal20)
+
+  simulations[[i]] <- list(
+    id = i,
+    start = start,
+    n_years = n_years,
+    chronology = chronology,
+    samples = samples
+  )
+}
+```
+
+Each chronology is simulated **once** and reused across all configurations. The 
+configuration sweep only has to fit NetC14.
+
+```{r}
+#| label: tuning-loop
+#| output: false
+#| time_it: true
+clusters <- makeCluster(14)
+
+fns <- c(
+  "bgmm.R",
+  "calibrate.R",
+  "constants.R",
+  "dataframe-helpers.R",
+  "metrics.R",
+  "mixture-helpers.R",
+  "netc14.R",
+  "sample-dates.R",
+  "simulate-chronology.R",
+  "spd.R"
+)
+
+clusterExport(
+  clusters,
+  varlist = c(
+    "fns",
+    "intcal20",
+    "n_configs",
+    "tuning_grid"
+  ),
+  envir = environment()
+)
+
+clusterEvalQ(clusters, {
+  library(torch)
+  torch_set_num_threads(1)
+  lapply(file.path("R", fns), source, verbose = FALSE)
+})
+
+tuning_results <- parLapply(clusters, simulations, \(scenario) {
+  # scenario
+  years <- with(scenario, seq(start, start + n_years - 1))
+  calibrated_dates <- with(scenario, calibrate(samples, intcal20))
+  true_ages <- scenario[["samples"]][["cal_age"]]
+  true_density <- scenario[["chronology"]]
+
+  # configurations
+  results <- vector("list", n_configs)
+
+  for (i in seq_len(n_configs)) {
+    gamma <- tuning_grid[["gamma"]][i]
+    pi <- tuning_grid[["pi"]][i]
+    netc_mod <- netc(calibrated_dates, gamma = gamma, pi = pi)
+    estimated_density <- density(netc_mod, years)[["density"]]
+    estimated_ages <- predict(netc_mod, calibrated_dates)
+
+    results[[i]] <- data.frame(
+      pi = pi,
+      gamma = gamma,
+      tvd = tvd(estimated_density, true_density),
+      wd = wd(estimated_density, true_density),
+      mae = mae(estimated_ages, true_ages),
+      mse = mse(estimated_ages, true_ages)
+    )
+  }
+
+  # oracle
+  oracle_ages <- predict(scenario[["chronology"]], calibrated_dates)
+  maeo <- mae(oracle_ages, true_ages)
+  mseo <- mse(oracle_ages, true_ages)
+
+  # return
+  results <- do.call(rbind, results)
+  transform(
+    results,
+    scenario = scenario[["id"]],
+    start = scenario[["start"]],
+    maeo = maeo,
+    mseo = mseo
+  )
+})
+
+stopCluster(clusters)
+tuning_results <- do.call(rbind, tuning_results)
+```
+
+Combine results and save.
+
+```{r}
+#| label: save-results
+evaluation_grid[["scenario"]] <- seq_len(n_scenarios)
+tuning_results <- merge(tuning_results, evaluation_grid, all.x = TRUE)
+
+tuning_results <- tuning_results[c(
+  "scenario",
+  "pi",
+  "gamma",
+  "n_years",
+  "n_samples",
+  "n_clusters",
+  "start",
+  "tvd",
+  "wd",
+  "mae",
+  "mse",
+  "maeo",
+  "mseo"
+)]
+
+write.csv(
+  tuning_results,
+  file = "data/tuning-results.csv",
+  row.names = FALSE
+)
+```
+
+## Results
+
+The x-axis measures how well the model does at *summarizing* dates (at 
+estimating the true density). TVD refers to "Total Variation Distance". The 
+y-axis measures how well the model does at *calibrating* dates (at 
+estimating the true age of each sample). MAE is L1 loss or "Mean Absolute 
+Error". Note that we normalize the calibration score using an oracle model.
+
+```{r}
+#| label: aggregate-results
+tuning_results <- transform(
+  tuning_results,
+  mae = (mae - maeo) / maeo
+)
+
+tuning_results <- aggregate(
+  cbind(tvd, mae) ~ pi + gamma,
+  data = tuning_results,
+  FUN = median
+)
+```
+
+```{r}
+#| label: visualize-tuning-results
+#| code-fold: true
+#| output: false
+svglite(
+  "figures/tuning-objectives.svg",
+  width = 5.5,
+  height = 3
+)
+
+xlim <- quantile(tuning_results[["tvd"]], probs = c(0, 0.95), names = FALSE)
+ylim <- quantile(tuning_results[["mae"]], probs = c(0, 0.95), names = FALSE)
+
+par(defaults)
+par(mai = c(0.5, 0.5, 0, 0))
+
+new_plot(xlim, ylim)
+add_grid()
+
+with(
+  tuning_results,
+  points(
+    tvd,
+    mae,
+    pch = 19,
+    col = adjustcolor(coolors("gray"), 0.75),
+    cex = 1
+  )
+)
+
+x_axis()
+y_axis()
+
+x_title("SUMMARIZING [TVD]")
+y_title("CALIBRATING [MAE-Recovery]")
+
+dev.off()
+```
+
+:::{#tuning-objectives}
+![](/figures/tuning-objectives.svg){width=75%}
+:::
+
+### Optimal configuration
+
+The objectives of calibrating and summarizing radiocarbon dates should be 
+complementary - a better estimate of the true density should lead to a better 
+estimate of the true ages, and vice versa, but this is not guaranteed. 
+Especially for mixture models, the issue of non-identifiability can lead to
+models that do equally well at reconstructing the true density, but offer 
+different point estimates of the true ages. This is most likely exacerbated by
+uncertainty in the calibration curve.
+
+The Pareto Front represents the set of configurations where you cannot improve 
+one objective without sacrificing the other. Strictly speaking, we want the set 
+of configurations that are non-dominated, meaning no other configuration beats 
+them on both objectives.
+
+```{r}
+#| label: best-configuration
+pareto <- function(x, y) {
+  vapply(
+    seq_len(length(x)),
+    function(i) !any(x <= x[i] & y <= y[i] & (x < x[i] | y < y[i])),
+    logical(1)
+  )
+}
+
+subset(tuning_results, pareto(tvd, mae))
+```
+
+## Session Info
+
+```{r}
+#| label: session-info
+sessioninfo::session_info(pkgs = "attached")
+```
