@@ -307,17 +307,14 @@ ckde(calibrated_dates)
 
 ### Bayesian Gaussian Mixture Model
 
-This is roughly equivalent to the model proposed by Price et al (2021). It uses  
-equivalent priors and log posterior, but we use a more conservative Gamma on the 
-variance, moving the mean closer to one hundred years (Price's hypers put that 
-closer to fifty years). There are three additional changes that are worth 
-mentioning. First, to sample the posterior distribution, it uses a pure R 
-implementation of Metropolis-within-Gibbs MCMC with block proposals rather than 
-Stan's Hamiltonian. Second, the Price model uses GMM with EM to initialize 
-parameters, but we use a simpler kmeans approach instead, fitting kmeans with
-different numbers of clusters, then selecting the one with the highest BIC 
-score. Finally, and perhaps most importantly, we forego sampling means in MCMC,
-opting instead to keep the initialized kmeans centers fixed instead.
+This is roughly equivalent to the model proposed by Price et al (2021), but not
+exactly the same. There are four notable changes. First, to specify the number 
+of mixture components, we use kmeans with different values of K and select the 
+one that minimizes BIC. Second, we use a small concentration for the Dirichlet 
+prior to induce sparsity. Third, we let the prior on the variance adapt to the 
+number of years in the interval. And fourth, to sample the posterior 
+distribution, we implement adaptive dual averaging Hamiltonian Monte Carlo in a 
+torch module, rather than using Stan.
 
 ```{r}
 #| label: bgmm
