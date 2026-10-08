@@ -35,7 +35,7 @@
 #'
 #'   **Priors**
 #'   - weights = Dirichlet(alpha)
-#'   - means = flat on ordered means above `start`
+#'   - means = flat on ordered means between `start` and `end`
 #'   - errors = Gamma(shape, rate)
 #'
 #'   **Hamiltonian Monte Carlo**
@@ -63,7 +63,7 @@ bgmm <- function(
   means <- initialize(calibrated_dates, years, n_clusters)
   n_clusters <- length(means)
   weights <- rep(1 / n_clusters, n_clusters)
-  deltas <- diff(c(start, means))
+  deltas <- diff(c(start, means)) / (end - means[n_clusters])
   errors <- rep(length(years) / n_clusters, n_clusters)
 
   # adapt gamma parameters to time range and number of clusters
@@ -72,7 +72,7 @@ bgmm <- function(
 
   # unconstrain parameters and initialize sampler
   theta <- torch::torch_tensor(log(c(weights, deltas, errors)))
-  posterior <- nn_posterior(calibrated_dates, years, start, alpha, shape, rate)
+  posterior <- nn_posterior(calibrated_dates, years, alpha, shape, rate)
   hmc <- nn_hmc(posterior, theta, n_jumps, n_iter)
 
   # do bayesian inference
@@ -127,13 +127,14 @@ bic <- function(rss, n, k) {
 # torch module: log posterior of bgmm
 nn_posterior <- torch::nn_module(
   "PosteriorBGMM",
-  initialize = function(calibrated_dates, years, start, alpha, shape, rate) {
+  initialize = function(calibrated_dates, years, alpha, shape, rate) {
     # evaluate the likelihood on a 5-year grid to reduce cost
     i <- seq(1, length(years), by = 5)
     M <- calibrated_dates[, i] / rowSums(calibrated_dates[, i])
     self$M <- torch::torch_tensor(M)
     self$years <- torch::torch_tensor(years[i])$unsqueeze(1)
-    self$start <- start
+    self$start <- min(years)
+    self$n_years <- max(years) - min(years)
     self$alpha <- alpha
     self$shape <- shape
     self$rate <- rate
@@ -146,8 +147,9 @@ nn_posterior <- torch::nn_module(
     deltas <- torch::torch_exp(p[[2]])
     errors <- torch::torch_exp(p[[3]])
 
-    # the ordering constraint enforces identifiability
-    means <- self$start + torch::torch_cumsum(deltas, dim = -1)
+    # ordered means bounded to [start, end], ordering enforces identifiability
+    total <- 1 + deltas$sum(dim = -1, keepdim = TRUE)
+    means <- self$start + self$n_years * torch::torch_cumsum(deltas, dim = -1) / total
 
     list(weights = weights, means = means, errors = errors)
   },
@@ -187,8 +189,9 @@ nn_posterior <- torch::nn_module(
     ld <- self$log_dirichlet(weights)
     lg <- self$log_gamma(errors, log_errors)
 
-    # jacobian for log deltas with uniform prior on means
-    jd <- log_deltas$sum()
+    # jacobian for log deltas with uniform prior on ordered means in [start, end]
+    n_gaps <- log_deltas$size(1) + 1
+    jd <- log_deltas$sum() - n_gaps * torch::torch_log1p(log_deltas$exp()$sum())
 
     ll + ld + lg + jd
   }
