@@ -157,7 +157,8 @@ intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
 ```
 
 The tuning grid crosses $\pi \times \gamma$ configurations. The chronology grid 
-crosses problem size, sample count, and mixture complexity scenarios. Every 
+crosses problem size, sample count, mixture complexity, and component
+distribution scenarios. Every
 configuration is evaluated against every chronological scenario.
 
 ```{r}
@@ -170,7 +171,9 @@ tuning_grid <- expand.grid(
 evaluation_grid <- expand.grid(
   n_years = c(500, 2500, 12500) - 1,
   n_samples = c(50, 250, 1250),
-  n_clusters = c(1, 3, 9)
+  n_clusters = c(1, 3, 9),
+  distribution = c("gaussian", "uniform", "skewed"),
+  stringsAsFactors = FALSE
 )
 
 n_configs <- nrow(tuning_grid)
@@ -195,11 +198,12 @@ for (i in seq_len(n_scenarios)) {
   n_years <- evaluation_grid[["n_years"]][i]
   n_clusters <- evaluation_grid[["n_clusters"]][i]
   n_samples <- evaluation_grid[["n_samples"]][i]
+  distribution <- evaluation_grid[["distribution"]][i]
   start <- sample(seq(100, 49500 - n_years), 1)
   end <- start + n_years
 
   # simulate chronology and draw samples
-  chronology <- simulate_chronology(start, end, n_clusters)
+  chronology <- simulate_chronology(start, end, n_clusters, distribution)
   samples <- sample_dates(chronology, n_samples, intcal20)
 
   simulations[[i]] <- list(
@@ -312,6 +316,7 @@ tuning_results <- tuning_results[c(
   "n_years",
   "n_samples",
   "n_clusters",
+  "distribution",
   "start",
   "tvd",
   "wd",

@@ -629,9 +629,10 @@ The steps are as follows:
 6. Infer chronology and sample ages.
 7. Evaluate models.
 
-These steps are repeated for each simulation. Currently, there are 3 (n_years) * 
-3 (n_samples) * 3 (n_clusters) = 27 starting conditions that are repeated 28 
-times each, resulting in 756 unique simulations with randomization.
+These steps are repeated for each simulation. Currently, there are 3 (n_years) *
+3 (n_samples) * 3 (n_clusters) * 3 (distribution) = 81 starting conditions that
+are repeated 28 times each, resulting in 2268 unique simulations with
+randomization.
 
 **Metrics**
 
@@ -653,7 +654,9 @@ times each, resulting in 756 unique simulations with randomization.
 evaluation_grid <- expand.grid(
   n_years = c(500, 2500, 12500),
   n_samples = c(50, 250, 1250),
-  n_clusters = c(1, 3, 9)
+  n_clusters = c(1, 3, 9),
+  distribution = c("gaussian", "uniform", "skewed"),
+  stringsAsFactors = FALSE
 )
 
 # repeat each combination n times
@@ -702,11 +705,12 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
   n_years <- evaluation_grid[["n_years"]][i]
   n_clusters <- evaluation_grid[["n_clusters"]][i]
   n_samples <- evaluation_grid[["n_samples"]][i]
+  distribution <- evaluation_grid[["distribution"]][i]
   start <- sample(seq(100, 49500 - n_years), 1)
   end <- start + n_years - 1
 
   # simulate chronology, draw samples, and calibrate
-  chronology <- simulate_chronology(start, end, n_clusters)
+  chronology <- simulate_chronology(start, end, n_clusters, distribution)
   samples <- sample_dates(chronology, n_samples, intcal20)
   calibrated_dates <- calibrate(samples, intcal20)
 
@@ -753,6 +757,7 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
     n_years = n_years,
     n_samples = n_samples,
     n_clusters = n_clusters,
+    distribution = distribution,
     e_clusters = e_clusters,
     mae_oracle = mae_oracle,
     mse_oracle = mse_oracle,

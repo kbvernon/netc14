@@ -1,18 +1,31 @@
 #' Simulate Chronology
 #'
-#' Simulate a probability density over time defined by a mixture of Gaussians.
+#' Simulate a probability density over time defined by a mixture of Gaussian,
+#' uniform, or skewed (gamma) components.
 #'
 #' @param start integer scalar, the start date in years before present
 #' @param end integer scalar, the end date in years before present
-#' @param n_clusters integer scalar, the number of Gaussian clusters
+#' @param n_clusters integer scalar, the number of mixture components
+#' @param distribution character scalar, the component family, one of
+#'   `"gaussian"` (default), `"uniform"`, or `"skewed"`
 #'
 #' @return A numeric vector with class `Chronology` whose values are the
 #'   mixture density evaluated over an annual grid from `start` to `end`. The
-#'   start, end, and simulated mixture parameters are stored as attributes.
+#'   start, end, distribution, and simulated mixture parameters are stored as
+#'   attributes.
 #'
 #' @details The simulation attempts to randomly sample mixture locations from
-#'   regularly spaced bins over the sequence from `start` to `end`.
-simulate_chronology <- function(start, end, n_clusters) {
+#'   regularly spaced bins over the sequence from `start` to `end`. All
+#'   component families are parameterized by their mean and standard deviation.
+#'   Skewed components are shifted gamma distributions with shape 2, randomly
+#'   reflected to skew left or right.
+simulate_chronology <- function(
+  start,
+  end,
+  n_clusters,
+  distribution = c("gaussian", "uniform", "skewed")
+) {
+  distribution <- match.arg(distribution)
   years <- seq(start, end)
 
   # weights
@@ -38,16 +51,25 @@ simulate_chronology <- function(start, end, n_clusters) {
   errors <- rgamma(n_clusters, shape = 10, rate = (10 - 1) / scale)
   errors <- pmax(errors, round(scale))
 
-  # component likelihoods: w * N(t|u,s)
+  # component densities with mean and standard deviation
+  component <- switch(
+    distribution,
+    gaussian = .gaussian,
+    uniform = .uniform,
+    skewed = .skewed
+  )
+
+  # component likelihoods: w * f(t|u,s)
   mixtures <- Map(
-    \(w, u, s) w * dnorm(years, u, s),
+    \(x, w, u, s) w * component(x, u, s),
     w = weights,
     u = means,
-    s = errors
+    s = errors,
+    MoreArgs = list(x = years)
   )
   mixtures <- do.call(rbind, mixtures)
 
-  # density: p(t|w,u,s) = Σ w * N(t|u,s)
+  # density: p(t|w,u,s) = Σ w * f(t|u,s)
   v <- colSums(mixtures)
   # truncate
   v <- v / sum(v)
@@ -58,12 +80,29 @@ simulate_chronology <- function(start, end, n_clusters) {
     class = c("Chronology", class(v)),
     start = start,
     end = end,
+    distribution = distribution,
     mixtures = data.frame(
       weights = weights,
       means = means,
       errors = errors
     )
   )
+}
+
+.gaussian <- function(x, mean, sd) {
+  dnorm(x, mean, sd)
+}
+
+.uniform <- function(x, mean, sd) {
+  start <- mean - sqrt(3) * sd
+  end <- mean + sqrt(3) * sd
+  dunif(x, start, end)
+}
+
+.skewed <- function(x, mean, sd) {
+  d <- sample(c(-1, 1), size = 1)
+  k <- 2
+  dgamma(d * (x - mean) + sqrt(k) * sd, shape = k, scale = sd / sqrt(k))
 }
 
 #' Print Chronology
@@ -80,6 +119,7 @@ print.Chronology <- function(x, ...) {
   template <- paste(
     "Chronology -----",
     "Years: %d-%d",
+    "Distribution: %s",
     "N Mixtures: %d\n",
     "Parameters\n",
     sep = "\n"
@@ -89,6 +129,7 @@ print.Chronology <- function(x, ...) {
     template,
     attr(x, "start"),
     attr(x, "end"),
+    attr(x, "distribution"),
     nrow(parameters)
   )
 
