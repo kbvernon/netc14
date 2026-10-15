@@ -12,8 +12,8 @@
 #'   removed from the output.
 #' @param n_jumps integer, number of leapfrog steps per HMC proposal
 #'   (default 12).
-#' @param alpha numeric, Dirichlet concentration for mixture weights
-#'   (default 0.6).
+#' @param alpha_shape,alpha_rate numeric, shape and rate of the Gamma hyperprior
+#'   on the Dirichlet concentration for mixture weights (default 1 and 1).
 #' @param cv numeric, coefficient of variation for the Gamma prior, allows
 #'   shape and rate to adapt to a mean for the Gamma defined by the width of the
 #'   time range and number of mixture components, with `shape = 1 / cv^2` and
@@ -21,7 +21,8 @@
 #'   `shape/rate`, and that standard deviation is `sqrt(shape)/rate`.
 #'
 #' @return A list with class `BGMM` containing full MCMC traces of mixture
-#'   `weights`, `means`, and `errors`. Each is an `n_iter x n_clusters` matrix.
+#'   `weights`, `means`, and `errors`, each an `n_iter x n_clusters` matrix,
+#'   and of the Dirichlet concentration `alpha`, an `n_iter x 1` matrix.
 #'   Attributes include `n_clusters`, `n_iter`, `n_samples`, `n_accept`,
 #'   `step_size`, `start`, `end`, and `elapsed`.
 #'
@@ -35,7 +36,8 @@
 #'   become initial errors.
 #'
 #'   **Priors**
-#'   - weights = Dirichlet(alpha)
+#'   - weights = Dirichlet(alpha), sampled as normalized Gamma(alpha, 1) draws
+#'   - alpha = Gamma(alpha_shape, alpha_rate)
 #'   - means = flat on ordered means between `start` and `end`
 #'   - errors = Gamma(shape, rate)
 #'
@@ -50,7 +52,8 @@ bgmm <- function(
   n_clusters = 1:9,
   n_iter = 1000,
   n_jumps = 12,
-  alpha = 0.6,
+  alpha_shape = 1,
+  alpha_rate = 1,
   cv = 0.6
 ) {
   .start <- Sys.time()
@@ -77,14 +80,15 @@ bgmm <- function(
 
   # do bayesian inference
   hmc <- hmc_script$sample(
-    torch::torch_tensor(log(c(weights, deltas, errors))),
+    torch::torch_tensor(log(c(weights, deltas, errors, 1))),
     torch::jit_scalar(as.integer(n_iter)),
     torch::jit_scalar(as.integer(n_jumps)),
     torch::torch_tensor(M),
     torch::torch_tensor(years[i]),
     torch::jit_scalar(as.integer(start)),
     torch::jit_scalar(as.integer(end - start)),
-    torch::jit_scalar(alpha),
+    torch::jit_scalar(alpha_shape),
+    torch::jit_scalar(alpha_rate),
     torch::jit_scalar(shape),
     torch::jit_scalar(rate),
     torch::jit_scalar(EPS)
@@ -96,7 +100,10 @@ bgmm <- function(
     torch::jit_scalar(as.integer(start)),
     torch::jit_scalar(as.integer(end - start))
   )
-  out <- setNames(lapply(out, as.matrix), c("weights", "means", "errors"))
+  out <- setNames(
+    lapply(out, as.matrix),
+    c("weights", "means", "errors", "alpha")
+  )
 
   structure(
     out,
@@ -151,26 +158,34 @@ def exp_(x: float) -> float:
 def log_(x: float) -> float:
     return float(torch.log(torch.tensor(x)))
 
+def split(theta: Tensor) -> List[Tensor]:
+    k = (theta.size(-1) - 1) // 3
+    return torch.split(theta, [k, k, k, 1], dim=-1)
+
 def constrain(theta: Tensor, start: int,
-              n_years: int) -> Tuple[Tensor, Tensor, Tensor]:
-    p = torch.chunk(theta, 3, dim=-1)
+              n_years: int) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    p = split(theta)
     weights = torch.softmax(p[0], dim=-1)
     deltas = torch.exp(p[1])
     errors = torch.exp(p[2])
+    alpha = torch.exp(p[3])
 
     # ordered means bounded to [start, end], ordering enforces identifiability
     total = 1 + deltas.sum(dim=-1, keepdim=True)
     means = start + n_years * torch.cumsum(deltas, dim=-1) / total
 
-    return weights, means, errors
+    return weights, means, errors, alpha
 
 def logp(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
-         alpha: float, shape: float, rate: float, eps: float) -> Tensor:
-    p = torch.chunk(theta, 3)
+         alpha_shape: float, alpha_rate: float, shape: float, rate: float,
+         eps: float) -> Tensor:
+    p = split(theta)
+    logits = p[0]
     log_deltas = p[1]
     log_errors = p[2]
+    log_alpha = p[3]
     deltas = torch.exp(log_deltas)
-    weights, means, errors = constrain(theta, start, n_years)
+    weights, means, errors, alpha = constrain(theta, start, n_years)
 
     Z =(years - means.unsqueeze(1)) / errors.unsqueeze(1)
     D = torch.exp(-0.5 * Z ** 2) / errors.unsqueeze(1)
@@ -178,28 +193,31 @@ def logp(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
     v = f / (f.sum() + eps)
 
     ll = torch.log(torch.matmul(M, v) + eps).sum()
-    ld = (alpha * torch.log(weights + eps)).sum()
+    ld = (alpha * logits - torch.exp(logits) - torch.lgamma(alpha)).sum()
+    la = (alpha_shape * log_alpha - alpha_rate * alpha).sum()
     lg = (shape * log_errors - rate * errors).sum()
     jd = log_deltas.sum() - (log_deltas.size(0) + 1) * torch.log1p(deltas.sum())
 
-    return ll + ld + lg + jd
+    return ll + ld + la + lg + jd
 
 def gradient(theta: Tensor, M: Tensor, years: Tensor, start: int,
-             n_years: int, alpha: float, shape: float, rate: float,
-             eps: float) -> Tuple[Tensor, Tensor]:
+             n_years: int, alpha_shape: float, alpha_rate: float, shape: float,
+             rate: float, eps: float) -> Tuple[Tensor, Tensor]:
     theta = theta.detach().requires_grad_(True)
-    lp = logp(theta, M, years, start, n_years, alpha, shape, rate, eps)
+    lp = logp(theta, M, years, start, n_years, alpha_shape, alpha_rate, shape,
+              rate, eps)
     g = torch.autograd.grad([lp], [theta])[0]
     assert g is not None
     return lp.detach(), g
 
 def sample(theta: Tensor, n_iter: int, n_jumps: int, M: Tensor, years: Tensor,
-           start: int, n_years: int, alpha: float, shape: float,
-           rate: float, eps: float) -> Tuple[Tensor, int, float]:
+           start: int, n_years: int, alpha_shape: float, alpha_rate: float,
+           shape: float, rate: float, eps: float) -> Tuple[Tensor, int, float]:
     n_par = theta.size(0)
     draws = torch.empty(n_iter, n_par)
     inv_mass = torch.ones(n_par)
-    lp, g = gradient(theta, M, years, start, n_years, alpha, shape, rate, eps)
+    lp, g = gradient(theta, M, years, start, n_years, alpha_shape, alpha_rate,
+                     shape, rate, eps)
     n_accept = 0
 
     # dual averaging (Hoffman & Gelman 2014, algorithm 5)
@@ -223,8 +241,8 @@ def sample(theta: Tensor, n_iter: int, n_jumps: int, M: Tensor, years: Tensor,
         for s in range(n_jumps):
             momentum_new = momentum_new + 0.5 * step * g_new
             theta_new = theta_new + step * inv_mass * momentum_new
-            lp_new, g_new = gradient(theta_new, M, years, start, n_years, alpha,
-                                     shape, rate, eps)
+            lp_new, g_new = gradient(theta_new, M, years, start, n_years,
+                                     alpha_shape, alpha_rate, shape, rate, eps)
             momentum_new = momentum_new + 0.5 * step * g_new
 
         # metropolis-hastings
