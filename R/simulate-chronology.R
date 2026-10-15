@@ -48,8 +48,7 @@ simulate_chronology <- function(
 
   # errors or standard deviations
   scale <- (end - start) / 20
-  errors <- rgamma(n_clusters, shape = 10, rate = (10 - 1) / scale)
-  errors <- pmax(errors, round(scale))
+  errors <- rgamma(n_clusters, shape = 4, rate = 4 / scale)
 
   # component densities with mean and standard deviation
   component <- switch(
