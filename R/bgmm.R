@@ -1,7 +1,8 @@
 #' Bayesian Gaussian Mixture Model
 #'
 #' Fit a Bayesian Gaussian Mixture Model to calibrated radiocarbon dates using
-#' Hamiltonian Monte Carlo, with gradients supplied by torch autograd.
+#' Hamiltonian Monte Carlo, with gradients supplied by torch autograd. The
+#' sampler is written in TorchScript, so it runs entirely in libtorch.
 #'
 #' @param calibrated_dates a `CalGrid` matrix of calibrated dates
 #' @param n_clusters integer scalar or vector. If a scalar, uses that many
@@ -70,16 +71,32 @@ bgmm <- function(
   shape <- 1 / cv^2
   rate <- shape / (length(years) / n_clusters)
 
-  # unconstrain parameters and initialize sampler
-  theta <- torch::torch_tensor(log(c(weights, deltas, errors)))
-  posterior <- nn_posterior(calibrated_dates, years, alpha, shape, rate)
-  hmc <- nn_hmc(posterior, theta, n_jumps, n_iter)
+  # evaluate the likelihood on a 5-year grid to reduce cost
+  i <- seq(1, length(years), by = 5)
+  M <- calibrated_dates[, i] / rowSums(calibrated_dates[, i])
 
   # do bayesian inference
-  draws <- hmc$sample()
+  hmc <- hmc_script$sample(
+    torch::torch_tensor(log(c(weights, deltas, errors))),
+    torch::jit_scalar(as.integer(n_iter)),
+    torch::jit_scalar(as.integer(n_jumps)),
+    torch::torch_tensor(M),
+    torch::torch_tensor(years[i]),
+    torch::jit_scalar(as.integer(start)),
+    torch::jit_scalar(as.integer(end - start)),
+    torch::jit_scalar(alpha),
+    torch::jit_scalar(shape),
+    torch::jit_scalar(rate),
+    torch::jit_scalar(EPS)
+  )
 
   # return
-  out <- lapply(posterior$constrain(draws), as.matrix)
+  out <- hmc_script$constrain(
+    hmc[[1]],
+    torch::jit_scalar(as.integer(start)),
+    torch::jit_scalar(as.integer(end - start))
+  )
+  out <- setNames(lapply(out, as.matrix), c("weights", "means", "errors"))
 
   structure(
     out,
@@ -87,8 +104,8 @@ bgmm <- function(
     n_clusters = n_clusters,
     n_iter = n_iter,
     n_samples = nrow(calibrated_dates),
-    n_accept = hmc$n_accept,
-    step_size = hmc$step,
+    n_accept = hmc[[2]],
+    step_size = hmc[[3]],
     start = start,
     end = end,
     elapsed = as.numeric(Sys.time() - .start, units = "secs")
@@ -124,246 +141,127 @@ bic <- function(rss, n, k) {
   n * log(rss / n) + 3 * k * log(n)
 }
 
-# torch module: log posterior of bgmm
-nn_posterior <- torch::nn_module(
-  "PosteriorBGMM",
-  initialize = function(calibrated_dates, years, alpha, shape, rate) {
-    # evaluate the likelihood on a 5-year grid to reduce cost
-    i <- seq(1, length(years), by = 5)
-    M <- calibrated_dates[, i] / rowSums(calibrated_dates[, i])
-    self$M <- torch::torch_tensor(M)
-    self$years <- torch::torch_tensor(years[i])$unsqueeze(1)
-    self$start <- min(years)
-    self$n_years <- max(years) - min(years)
-    self$alpha <- alpha
-    self$shape <- shape
-    self$rate <- rate
-  },
-  # constrain to parameter space
-  constrain = function(theta) {
-    p <- torch::torch_chunk(theta, 3, dim = -1)
+# torchscript: log posterior, gradient, leapfrog, and hmc sampler of bgmm
+# unfortunately, this requires python code...
+hmc_script <- torch::jit_compile(
+  "
+def exp_(x: float) -> float:
+    return float(torch.exp(torch.tensor(x)))
 
-    weights <- torch::nnf_softmax(p[[1]], dim = -1)
-    deltas <- torch::torch_exp(p[[2]])
-    errors <- torch::torch_exp(p[[3]])
+def log_(x: float) -> float:
+    return float(torch.log(torch.tensor(x)))
+
+def constrain(theta: Tensor, start: int,
+              n_years: int) -> Tuple[Tensor, Tensor, Tensor]:
+    p = torch.chunk(theta, 3, dim=-1)
+    weights = torch.softmax(p[0], dim=-1)
+    deltas = torch.exp(p[1])
+    errors = torch.exp(p[2])
 
     # ordered means bounded to [start, end], ordering enforces identifiability
-    total <- 1 + deltas$sum(dim = -1, keepdim = TRUE)
-    means <- self$start + self$n_years * torch::torch_cumsum(deltas, dim = -1) / total
+    total = 1 + deltas.sum(dim=-1, keepdim=True)
+    means = start + n_years * torch.cumsum(deltas, dim=-1) / total
 
-    list(weights = weights, means = means, errors = errors)
-  },
-  # density: p(t|w,u,s) = Σ w * N(t|u,s)
-  # also denoted by `v` in (Price et al 2021)
-  density = function(weights, means, errors) {
-    Z <- (self$years - means$unsqueeze(2)) / errors$unsqueeze(2)
-    D <- torch::torch_exp(-0.5 * Z^2) / errors$unsqueeze(2)
-    f <- torch::torch_matmul(weights, D)
-    f / (f$sum() + EPS)
-  },
-  log_likelihood = function(v) {
-    h <- torch::torch_matmul(self$M, v)
-    torch::torch_log(h + EPS)$sum()
-  },
-  log_dirichlet = function(weights) {
-    (self$alpha * torch::torch_log(weights + EPS))$sum()
-  },
-  log_gamma = function(errors, log_errors) {
-    (self$shape * log_errors - self$rate * errors)$sum()
-  },
-  forward = function(theta) {
-    log_ <- torch::torch_chunk(theta, 3)
-    log_deltas <- log_[[2]]
-    log_errors <- log_[[3]]
+    return weights, means, errors
 
-    # constrain to parameter space
-    p <- self$constrain(theta)
-    weights <- p[["weights"]]
-    means <- p[["means"]]
-    errors <- p[["errors"]]
+def logp(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
+         alpha: float, shape: float, rate: float, eps: float) -> Tensor:
+    p = torch.chunk(theta, 3)
+    log_deltas = p[1]
+    log_errors = p[2]
+    deltas = torch.exp(log_deltas)
+    weights, means, errors = constrain(theta, start, n_years)
 
-    # mixture density
-    v <- self$density(weights, means, errors)
+    Z =(years - means.unsqueeze(1)) / errors.unsqueeze(1)
+    D = torch.exp(-0.5 * Z ** 2) / errors.unsqueeze(1)
+    f = torch.matmul(weights, D)
+    v = f / (f.sum() + eps)
 
-    ll <- self$log_likelihood(v)
-    ld <- self$log_dirichlet(weights)
-    lg <- self$log_gamma(errors, log_errors)
+    ll = torch.log(torch.matmul(M, v) + eps).sum()
+    ld = (alpha * torch.log(weights + eps)).sum()
+    lg = (shape * log_errors - rate * errors).sum()
+    jd = log_deltas.sum() - (log_deltas.size(0) + 1) * torch.log1p(deltas.sum())
 
-    # jacobian for log deltas with uniform prior on ordered means in [start, end]
-    n_gaps <- log_deltas$size(1) + 1
-    jd <- log_deltas$sum() - n_gaps * torch::torch_log1p(log_deltas$exp()$sum())
+    return ll + ld + lg + jd
 
-    ll + ld + lg + jd
-  }
-)
+def gradient(theta: Tensor, M: Tensor, years: Tensor, start: int,
+             n_years: int, alpha: float, shape: float, rate: float,
+             eps: float) -> Tuple[Tensor, Tensor]:
+    theta = theta.detach().requires_grad_(True)
+    lp = logp(theta, M, years, start, n_years, alpha, shape, rate, eps)
+    g = torch.autograd.grad([lp], [theta])[0]
+    assert g is not None
+    return lp.detach(), g
 
-# torch module: hamiltonian monte carlo sampler, H(θ,m) = P(θ) + K(m)
-# state is maintained internally using r6 mutability
-# the posterior module is jit-traced on construction
-nn_hmc <- torch::nn_module(
-  "HMC",
-  initialize = function(posterior, theta, n_jumps, n_iter) {
-    self$logp <- torch::jit_trace(posterior, theta)
+def sample(theta: Tensor, n_iter: int, n_jumps: int, M: Tensor, years: Tensor,
+           start: int, n_years: int, alpha: float, shape: float,
+           rate: float, eps: float) -> Tuple[Tensor, int, float]:
+    n_par = theta.size(0)
+    draws = torch.empty(n_iter, n_par)
+    inv_mass = torch.ones(n_par)
+    lp, g = gradient(theta, M, years, start, n_years, alpha, shape, rate, eps)
+    n_accept = 0
 
-    # inference control
-    self$n_par <- theta$size(1)
-    self$n_jumps <- n_jumps
-    self$n_iter <- n_iter
-    self$step <- 0.01
+    # dual averaging (Hoffman & Gelman 2014, algorithm 5)
+    step = 0.01
+    t = 0.0
+    u = log_(10 * step)
+    e = 0.0
+    h = 0.0
+    y = 0.05
+    o = 10.0
+    k = 0.75
+    d = 0.7
 
-    # state storage
-    self$iter <- 0L
-    self$draws <- torch::torch_empty(n_iter, self$n_par)
-    self$n_accept <- 0
-    self$state <- list(
-      theta = theta,
-      logp = as.numeric(self$logp(theta)),
-      momentum = NA,
-      inv_mass = torch::torch_ones(self$n_par)
-    )
-    self$proposal <- list()
+    for i in range(1, n_iter + 1):
+        # leapfrog
+        momentum = torch.randn(n_par) / torch.sqrt(inv_mass)
+        theta_new = theta
+        momentum_new = momentum
+        g_new = g
+        lp_new = lp
+        for s in range(n_jumps):
+            momentum_new = momentum_new + 0.5 * step * g_new
+            theta_new = theta_new + step * inv_mass * momentum_new
+            lp_new, g_new = gradient(theta_new, M, years, start, n_years, alpha,
+                                     shape, rate, eps)
+            momentum_new = momentum_new + 0.5 * step * g_new
 
-    # parameters for adaptive step size with dual averaging (da)
-    # fmt: skip
-    self$da <- list(
-      t = 0,                   # n steps since averaging (re)started
-      u = log(10 * self$step), # shrinkage target for log step
-      e = 0,                   # running average of log step size
-      h = 0,                   # running average of acceptance error
-      y = 0.05,                # shrinkage strength toward target u
-      o = 10,                  # offset stabilizing early adaptation
-      k = 0.75,                # decay exponent for averaging weights
-      d = 0.7                  # acceptance rate target
-    )
-  },
-  # the main hmc forward pass
-  sample = function() {
-    n_iter <- self$n_iter
+        # metropolis-hastings
+        H_new = lp_new - 0.5 * (inv_mass * momentum_new ** 2).sum()
+        H_old = lp - 0.5 * (inv_mass * momentum ** 2).sum()
+        a = float(torch.nan_to_num(torch.exp(H_new - H_old), nan=0.0).clamp(max=1.0))
+        if float(torch.rand(1)) < a:
+            theta = theta_new
+            lp = lp_new
+            g = g_new
+            n_accept += 1
+        draws[i - 1] = theta
 
-    # mcmc sampling
-    # fmt: skip
-    for (i in seq_len(n_iter)) {
-      self$momentum()
-      self$leapfrog()
-      if (self$accept()) self$keep() else self$continue()
-      if (i <= n_iter %/% 2) self$adapt()
-      if (i == n_iter %/% 2) self$freeze()
-      if (i == n_iter %/% 4) self$set_mass()
-    }
+        # adapt step size
+        if i <= n_iter // 2:
+            t += 1
+            h = (1 - 1 / (t + o)) * h + (d - a) / (t + o)
+            log_step = u - (t ** 0.5 / y) * h
+            w = t ** -k
+            e = w * log_step + (1 - w) * e
+            step = exp_(log_step)
 
-    self$draws
-  },
-  # sample momentum
-  momentum = function() {
-    sqrt_inv_mass <- torch::torch_sqrt(self$state[["inv_mass"]])
-    self$state[["momentum"]] <- torch::torch_randn(self$n_par) / sqrt_inv_mass
-  },
-  # leapfrog integration of hamiltonian dynamics
-  leapfrog = function() {
-    momentum <- self$state[["momentum"]]
-    theta <- self$state[["theta"]]$detach()$requires_grad_(TRUE)
-    logp <- self$logp(theta)
+        # freeze step size
+        if i == n_iter // 2:
+            step = exp_(e)
+            n_accept = 0
 
-    # gradient of the log posterior: ∇logp(θ) = -dU(θ)/dθ
-    gradient <- torch::autograd_grad(logp, theta)[[1]]
+        # estimate mass matrix and restart dual averaging
+        if i == n_iter // 4:
+            inv_mass = draws[(i // 2):i].var(dim=0).clamp(min=1e-6)
+            u = log_(10 * step)
+            h = 0.0
+            e = 0.0
+            t = 0.0
 
-    for (s in seq_len(self$n_jumps)) {
-      # half-step momentum update
-      momentum <- momentum + (0.5 * self$step) * gradient
-      # full-step parameter update
-      theta <- theta + self$step * self$state[["inv_mass"]] * momentum
-      # half-step momentum update
-      logp <- self$logp(theta)
-      gradient <- torch::autograd_grad(logp, theta)[[1]]
-      momentum <- momentum + (0.5 * self$step) * gradient
-    }
-
-    self$proposal <- list(
-      logp = as.numeric(logp),
-      theta = theta,
-      momentum = momentum
-    )
-  },
-  # accept using metropolis-hastings acceptance rule
-  accept = function() {
-    logp_current <- self$state[["logp"]]
-    momentum_current <- self$state[["momentum"]]
-    logp_proposal <- self$proposal[["logp"]]
-    momentum_proposal <- self$proposal[["momentum"]]
-
-    # calculate difference between hamiltonian for proposal and current state
-    H_proposal <- logp_proposal - self$kinetic(momentum_proposal)
-    H_current <- logp_current - self$kinetic(momentum_current)
-    dH <- H_proposal - H_current
-
-    # convert to R numeric
-    dH <- as.numeric(dH)
-
-    if (is.nan(dH)) {
-      dH <- -Inf
-    }
-
-    # acceptance probability saved for step size adaptation
-    self$da[["a"]] <- min(1, exp(dH))
-    runif(1) < self$da[["a"]]
-  },
-  # kinetic energy: K(m) for momentum m
-  kinetic = function(momentum) {
-    0.5 * torch::torch_sum(self$state[["inv_mass"]] * momentum^2)
-  },
-  # add accepted proposal to draws matrix and update state
-  keep = function() {
-    self$iter <- self$iter + 1L
-    self$draws[self$iter, ] <- self$proposal[["theta"]]
-    self$state[["theta"]] <- self$proposal[["theta"]]
-    self$state[["logp"]] <- self$proposal[["logp"]]
-    self$n_accept <- self$n_accept + 1
-  },
-  # add current state to draws matrix (if proposal rejected)
-  continue = function() {
-    self$iter <- self$iter + 1L
-    self$draws[self$iter, ] <- self$state[["theta"]]
-  },
-  # tune the step size toward acceptance rate target (d) by dual averaging
-  # see (Hoffman & Gelman 2014, algorithm 5)
-  # fmt: skip
-  adapt = function() {
-    # the equations are easier to read without `self$` everywhere
-    t <- self$da[["t"]] + 1L
-    o <- self$da[["o"]]
-    u <- self$da[["u"]]
-    h <- self$da[["h"]]
-    y <- self$da[["y"]]
-    k <- self$da[["k"]]
-    d <- self$da[["d"]]
-    a <- self$da[["a"]]
-
-    h <- (1 - 1 / (t + o)) * h + (d - a) / (t + o)
-    e <- u - (sqrt(t) / y) * h
-    w <- t^-k
-
-    self$da[["t"]] <- t
-    self$da[["h"]] <- h
-    self$da[["e"]] <- w * e + (1 - w) * self$da[["e"]]
-    self$step <- exp(e)
-  },
-  # estimate diagonal mass matrix from draws window and restart step size search
-  set_mass = function() {
-    window <- (self$iter %/% 2 + 1):self$iter
-    inv_mass <- self$draws[window, ]$var(dim = 1)$clamp(min = 1e-6)
-    self$state[["inv_mass"]] <- inv_mass
-
-    # restart dual averaging
-    self$da[["u"]] <- log(10 * self$step)
-    self$da[["h"]] <- 0
-    self$da[["e"]] <- 0
-    self$da[["t"]] <- 0
-  },
-  # post-burn-in draws are non-adaptive
-  freeze = function() {
-    self$step <- exp(self$da[["e"]])
-    self$n_accept <- 0
-  }
+    return draws, n_accept, step
+"
 )
 
 #' @rdname density
