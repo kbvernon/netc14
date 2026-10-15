@@ -3,7 +3,7 @@
 #' Fit Heaton's (2021) DPMM to radiocarbon samples using Polya Urn sampling.
 #'
 #' @param samples a data.frame with class `C14Samples`
-#' @param n_iter number of MCMC iterations to run (default 10,000)
+#' @param n_iter number of MCMC iterations to run (default 50,000)
 #' @param n_thin thinning interval; retain every `n_thin`-th iteration
 #'   (default 5)
 #'
@@ -13,7 +13,7 @@
 #'
 #' @details Uses the IntCal20 calibration curve. Polya Urn sampling is
 #'   recommended by Heaton (2021) for DPMM updating.
-dpmm <- function(samples, n_iter = 1e4, n_thin = 5) {
+dpmm <- function(samples, n_iter = 5e4, n_thin = 5) {
   .start <- Sys.time()
   out <- carbondate::PolyaUrnBivarDirichlet(
     rc_determinations = samples[["f14c_mu"]],
