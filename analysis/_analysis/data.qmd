@@ -77,44 +77,42 @@ years from $v$ using inverse transform sampling.
 $$
 t_{1}, ..., t_{n} \sim p(t \mid \theta) \approx \mathrm{Categorical}(\mathbf{v})
 $$
-Here are two ways to do that in R:
 
-```r
-cdf <- cumsum(v)
-j <- findInterval(runif(n), cdf, all.inside = TRUE)
-t <- years[j]
-
-# equivalent to
-t <- sample(years, size = n, replace = TRUE, prob = v)
-```
-
-We then pass those years to the calibration curve model and have it predict
-fraction modern measurements for those years.
+The years are the categories in this case, and $\mathbf{v}$ gives the 
+probability of drawing each one. So, once we have those sample years, we then 
+pass them to the calibration curve model and have it predict fraction modern 
+measurements for those years.
 
 $$
 \mu(t_{i}) \mid t_{i} \sim N(m(t_{i}), s(t_{i})^{2})
 $$
-in R:
-
-```r
-# Heaton's code refers to this draw as xcalcurve (for n samples)
-xcalcurve <- rnorm(n, mean = mt, sd = st^2)
-```
 
 Finally, we add randomly sampled measurement uncertainty $z_{i}$.
 
 $$
 F_{i} \mid \mu(t_{i}) \sim N(\mu(t_{i}), z_{i}^{2})
 $$
-in R:
+
+In R:
 
 ```r
+# sample years using R's binary search (which is competitive with Rust!)
+cdf <- cumsum(v)
+j <- findInterval(runif(n), cdf, all.inside = TRUE)
+t <- years[j]
+
+# this is equivalent to
+t <- sample(years, size = n, replace = TRUE, prob = v)
+
+# add calibration uncertainty
+xcalcurve <- rnorm(n, mean = mt, sd = st^2)
+
+# add measurement uncertainty
 Fi <- rnorm(n, mean = xcalcurve, sd = zi^2)
 ```
 
 This and the above `simulate_chronology()` function are based on
-`CreateDataVaryWeight()` used in (Heaton 2021, [github
-link](https://github.com/TJHeaton/NonparametricCalibration/blob/main/SimStudyFuncsFinal.R)).
+`CreateDataVaryWeight()` used in (Heaton 2021, [github link](https://github.com/TJHeaton/NonparametricCalibration/blob/main/SimStudyFuncsFinal.R)).
 
 ```{r}
 #| label: function-sample-dates
