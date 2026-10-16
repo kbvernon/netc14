@@ -128,11 +128,11 @@ for (i in seq_along(results)) {
   add_grid()
 
   with(densities, {
-    plot(bgmm, add = TRUE, col = coolors("brown"), se = FALSE)
-    plot(dpmm, add = TRUE, col = coolors("blue"), se = TRUE)
-    plot(netc, add = TRUE, col = coolors("orange"), se = TRUE)
-    plot(ckde, add = TRUE, col = coolors("yellow"), se = FALSE)
-    plot(spd, add = TRUE, col = coolors("gray"), lty = "dotted", se = FALSE)
+    plot(bgmm, add = TRUE, col = theme("BGMM"), se = FALSE)
+    plot(dpmm, add = TRUE, col = theme("DPMM"), se = TRUE)
+    plot(netc, add = TRUE, col = theme("NetC14"), se = TRUE)
+    plot(ckde, add = TRUE, col = theme("CKDE"), se = FALSE)
+    plot(spd, add = TRUE, col = theme("SPD"), lty = "dotted", se = FALSE)
   })
 
   par(mai = rep(0, 4))
