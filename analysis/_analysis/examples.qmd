@@ -118,11 +118,9 @@ $$
 \mathbf{Q} = \mathrm{diag}(\mathbf{h})^{-1} \mathbf{M} \hspace{2pt} \mathrm{diag}(\mathbf{v})
 $$
 
-The resulting matrix $\mathbf{Q}$ has the same dimensions as $\mathbf{M}$. 
-Getting a scalar estimate of age for each radiocarbon sample just requires 
-drawing an age from each row of $\mathbf{Q}$.
-
-Scalar age estimates are then drawn from each row of $\mathbf{Q}$:
+The resulting matrix $\mathbf{Q}$ has the same dimensions as $\mathbf{M}$.
+Getting a scalar estimate of age for each radiocarbon sample just requires
+drawing an age from each row of $\mathbf{Q}$:
 
 $$
 \begin{aligned}
@@ -135,6 +133,7 @@ In R:
 
 ```{r}
 #| label: example-posterior
+years <- seq(start, end)
 v <- densities[["netc"]][["density"]]
 q <- t(t(calibrated_dates) * v)
 q <- q / rowSums(q)
@@ -144,9 +143,9 @@ t_hat <- sample(years, size = 1, prob = q[i, ])
 ```
 
 Sampling in this way pulls the probability mass of the sample towards the modes
-of mixture density. The figure below demonstrates this. The blue line shows the 
-calibration likelihood of a sample, the red dashed line shows the prior, i.e., 
-the chronology or density estimated by the mixture, and the black line shows the
+of mixture density. The figure below demonstrates this. The blue line shows the
+calibration likelihood of a sample, the orange line shows the prior, i.e., the
+chronology or density estimated by the mixture, and the brown line shows the
 posterior, or the product of the likelihood and the prior. The crucial result is
 to concentrate the probability mass at the nearest mode in the density, which is
 presumably where the sample comes from.
@@ -155,7 +154,6 @@ presumably where the sample comes from.
 #| label: plot-example-age
 #| code-fold: true
 #| output: false
-years <- seq(start, end)
 curve <- subset(intcal20, cal_age >= start & cal_age <= end)
 
 Si <- 2700

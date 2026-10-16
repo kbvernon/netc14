@@ -16,20 +16,22 @@ between two probability distributions. The y-axis measures how well a model does
 at *calibrating* dates (at estimating the true age of each sample). MAE is L1
 loss or "Mean Absolute Error".
 
-Recovery refers to proportional improvement in calibration over an "oracle"
-model that knows the true age distribution or chronology.
+Recovery refers to the proportional excess error in calibration over an
+"oracle" model that knows the true age distribution or chronology.
 
 $$
 \rho = \frac{\text{Model} - \text{Oracle}}{\text{Oracle}}
 $$
 
-The idea behind recovery is to identify a theoretical limit on model
-performance, like even if you knew the true density, how much error would remain
-in trying to estimate ages given calibration curve and measurement uncertainty?
+The idea behind recovery is to establish a baseline for model performance, like
+even if you knew the true density, how much error would remain in trying to
+estimate ages given calibration curve and measurement uncertainty? Because age
+estimates are sampled, Monte Carlo noise means a model can occasionally beat the
+oracle, giving negative values.
 
 **Number of Samples**
 
-Points are median values across simulations and sample sizes.
+Points are median values across simulations for each sample size.
 
 ```{r}
 #| label: plot-evaluate-n-samples
@@ -114,7 +116,7 @@ dev.off()
 
 **Number of Clusters**
 
-Points are median values across simulations and number of clusters.
+Points are median values across simulations for each number of clusters.
 
 ```{r}
 #| label: plot-evaluate-n-clusters
@@ -199,7 +201,7 @@ dev.off()
 
 **Distribution**
 
-Points are median values across simulations and distributions.
+Points are median values across simulations for each distribution.
 
 ```{r}
 #| label: plot-evaluate-distribution

@@ -4,14 +4,21 @@ each combination of sample size and distribution, holding the interval at 2500
 years and the number of clusters at three. For each chronology, we run four
 chains of the BGMM and DPMM with different seeds and compute the
 rank-normalized split $\hat{R}$ (Vehtari et al 2021) on label-invariant
-quantities: the concentration parameter $\alpha$, the density $p(t)$ at each
-year on a 100-year grid, and, for the DPMM, the calendar age of each sample.
-Values of $\hat{R}$ below 1.01 indicate that the chains agree. To keep the
-BGMM chains targeting the same posterior, the number of components is chosen
-once per chronology by k-means. We also trace the Kullback-Leibler divergence
-of each iteration's density from the mean density over the first 10% of
-iterations, following `carbondate::PlotConvergenceData()`, and record NetC14's
-loss at each epoch.
+quantities: the density $p(t)$ at 100 evenly spaced years and, for the
+DPMM, the concentration parameter $\alpha$ and the calendar age of each sample.
+Values of $\hat{R}$ below 1.01 indicate that the chains agree.
+
+Mixture posteriors are multimodal, and Hamiltonian Monte Carlo cannot move
+between well-separated modes. Following Price et al (2021), who start all
+chains from the same parameter vector, every BGMM chain starts from the
+posterior mode for the selected number of components, jittered by its seed.
+The number of components and the mode do not depend on the seed, so the four
+chains target the same posterior, and $\hat{R}$ for the BGMM measures mixing
+around that mode rather than across all modes.
+
+We also trace the Kullback-Leibler divergence of each iteration's density
+from the mean density over the first 10% of iterations, following
+`carbondate::PlotConvergenceData()`, and record NetC14's loss at each epoch.
 
 ```{r}
 #| label: function-mixture-diagnostics
@@ -65,11 +72,7 @@ for (i in seq_len(n_scenarios)) {
   calibrated_dates <- calibrate(samples, intcal20)
 
   # training
-  k <- length(initialize(calibrated_dates, seq(start, end), 1:9))
-
-  bgmm_fits <- lapply(chains, \(.seed) {
-    bgmm(calibrated_dates, n_clusters = k, seed = .seed)
-  })
+  bgmm_fits <- lapply(chains, \(.seed) bgmm(calibrated_dates, seed = .seed))
 
   dpmm_fits <- lapply(chains, \(.seed) {
     set.seed(.seed)
@@ -86,7 +89,6 @@ for (i in seq_len(n_scenarios)) {
   )
 
   rhats <- rbind(
-    rhat_table(bgmm_fits, "alpha"),
     rhat_table(bgmm_fits, "density", years = years),
     rhat_table(dpmm_fits, "alpha"),
     rhat_table(dpmm_fits, "density"),
@@ -114,12 +116,16 @@ kld_results <- do.call(rbind, kld_results)
 loss_results <- do.call(rbind, loss_results)
 ```
 
-Maximum $\hat{R}$ by model, parameter, and sample size (grid years where the
-density is constant across all draws return `NaN` and are dropped):
+Median and maximum $\hat{R}$ by model, parameter, and sample size (grid years
+where the density is constant across all draws return `NaN` and are dropped):
 
 ```{r}
 #| label: convergence-summary
-aggregate(rhat ~ model + parameter + n_samples, data = rhat_results, FUN = max)
+aggregate(
+  rhat ~ model + parameter + n_samples,
+  data = rhat_results,
+  FUN = \(x) c(median = median(x), max = max(x))
+)
 ```
 
 ```{r}

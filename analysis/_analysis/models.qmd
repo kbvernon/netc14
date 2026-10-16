@@ -69,14 +69,17 @@ ckde(calibrated_dates)
 ### Bayesian Gaussian Mixture Model
 
 This is roughly equivalent to the model proposed by Price et al (2021), but not
-exactly the same. There are four notable changes. First, to specify the number
-of mixture components, we use kmeans with different values of K and select the
-one that minimizes BIC. Second, rather than fix the concentration of the
-Dirichlet prior on the mixture weights, we give it a Gamma(1, 1) hyperprior and
-sample it with the other parameters, as in the DPMM. Third, we let the prior on the variance adapt to the
-number of years in the interval. And fourth, to sample the posterior
+exactly the same. There are three notable changes. First, to specify the
+number of mixture components, we find the posterior mode for different values
+of K and select the one that minimizes BIC, computed from the mixture
+likelihood at the mode. Second, we let the prior on the component standard
+deviations adapt to the number of years in the interval. And third, to sample the posterior
 distribution, we implement adaptive dual averaging Hamiltonian Monte Carlo in a
-torch module, rather than using Stan.
+torch module, rather than using Stan. During burn-in, the sampler estimates a
+dense mass matrix from the covariance of the draws, which accounts for the
+strong correlations between parameters of overlapping components. Because
+mixture posteriors are multimodal, sampling starts from the posterior mode of
+the selected model, slightly jittered, rather than from a random point.
 
 ```{r}
 #| label: bgmm
@@ -105,10 +108,8 @@ documentation](https://tjheaton.github.io/carbondate/reference/PolyaUrnBivarDiri
 > approach (Neal 2000) This is our recommended updating approach based on
 > testing.
 
-holds the cluster assignment of each measurement $i = 1, ..., n$
-
-The
-$c_{i}$ are drawn using Polya Urn sampling 
+Let $c_{i}$ hold the cluster assignment of each measurement $i = 1, ..., n$.
+The $c_{i}$ are drawn using Polya Urn sampling
 
 $$
 c_{i} \mid t_{i}, \xi_{k}, n_{k} \sim \mathrm{Categorical}(r_{i1}, ..., r_{iK+1}), 
@@ -141,7 +142,7 @@ $$
 with $\lambda$ a weight on the component errors. The shape and rate parameters
 of the Gamma are updated each iteration based on the previous iteration's
 calendar age estimates $\hat{t}_{i}$ and the current assignments $c_{i}$. As the
-number of radiocarbon samples assigned to a cluster goes up, the scale parameter
+number of radiocarbon samples assigned to a cluster goes up, the shape parameter
 increases, and with it the expected precision. Conversely, when the spread of
 the calendar ages increases, the rate parameter also goes up, thereby decreasing
 the expected precision. The precision is also penalized when the mean of the
@@ -157,8 +158,8 @@ t_{i} \mid c_{i} = k, F_{i}, \xi_{k} \sim g_{ik},
 g_{ik}(t) \propto p(F_{i} \mid t) \hspace{2pt} N(t \mid \mu_{k}, \tau_{k}^{-1})
 $$
 
-Draws from this distribution are obtained using slice sampling [@neal2003]. So,
-the Gibbs sampler assigns a scalar age estimate to each ^14^C during each MCMC
+Draws from this distribution are obtained using slice sampling (Neal 2003). So,
+the Gibbs sampler assigns a scalar age estimate to each ^14^C date during each MCMC
 iteration. Because cluster assignment happens during MCMC, radiocarbon samples
 will wander across clusters in proportion to their likelihood. The individual
 age estimates from each iteration are thus analogous to the mixture weighted
@@ -176,11 +177,6 @@ term, the Student-t above, weighted by $\alpha_d/(n + \alpha_d)$. Age estimates
 are retained as draws from the posterior age distribution
 $[\hat{t} \mid F, \theta]$ for each radiocarbon date, the per iteration sampled
 ages.
-
-Heaton also recommends an enormous number of iterations - the default is one
-hundred thousand. This, however, is computationally prohibitive for any decently
-large sample. That is why the simulation in (Heaton 2021) uses only 10,000
-iterations, which we follow here.
 
 ```{r}
 #| label: dpmm
@@ -206,10 +202,10 @@ wrap these in a single model function that runs all the training logic,
 including back-propagation.
 
 
-The model forward pass is encapsulated in  module initialized with $K_{0} = \mathrm{min}(\mathrm{round}(\sqrt{m}), K_{max})$ 
+The model forward pass is encapsulated in a module initialized with $K_{0} = \mathrm{min}(\mathrm{round}(\sqrt{m}), K_{max})$ 
 clusters, where $K_{max}$ is the maximum number of allowed clusters (35 by 
 default). Three length-$K_{0}$ vectors hold the log-transformed mixture 
-parameters, with initial values set in the same manner as the BGMM. To construct 
+parameters, with means initially spaced evenly across the interval. To construct
 the mixture distribution, parameters must be transformed to satisfy certain 
 constraints, including the same ordering constraint placed on means by the BGMM. 
 The logits of the errors are exponentiated, ensuring that they are positive, and 
@@ -218,7 +214,7 @@ controlling how aggressively the activation zeroes them out. The activation
 works by centering the logits around a threshold and then applying the rectified 
 linear unit (ReLU) activation, with the threshold determined so that positive 
 centered logits sum to one and the rest are set to zero 
-[@martins-astudillo-2016]. Pruning components in this way rather than adding 
+(Martins and Astudillo 2016). Pruning components in this way rather than adding 
 them satisfies the requirement imposed by neural networks that the dimensions of 
 the data be known in advance. 
 
@@ -230,7 +226,7 @@ the density $\mathbf{\hat{v}}$. Tuning for the hyperparameters $\gamma$ and
 $\pi$ was done through a simple grid search over a range of values using the 
 evaluation method described in the next section, resulting in default values
 $\pi = 1.75$ and $\gamma = 2.5$. The model is trained over 512 epochs using the
-Adam optimizer with a learning rate of 0.005 [@kingma2017]. Density estimates
+Adam optimizer with a learning rate of 0.005 (Kingma and Ba 2017). Density estimates
 $\mathbf{\hat{v}}$ are obtained by setting the model to training mode and
 running multiple forward passes, generating unique estimates
 $\mathbf{\hat{v}}^{(s)}$ with Gaussian noise that are then averaged,

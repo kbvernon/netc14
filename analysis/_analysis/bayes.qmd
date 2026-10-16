@@ -53,7 +53,8 @@ $$
 This is equation 14 in Price *et al* 2021. The vector $\mathbf{h}$, whose
 elements are the individual likelihoods, is just the matrix product of the
 measurement matrix $\mathbf{M}$ and the discretized age distribution
-$\mathbf{v}$. The total log likelihood is the sum the elements of $\mathbf{h}$.
+$\mathbf{v}$. The total log likelihood is the sum of the logs of the elements of
+$\mathbf{h}$.
 
 $$
 \log p(F \mid \theta) \approx \sum_{i=1}^{n} \log \text{h}_{i}(\theta)

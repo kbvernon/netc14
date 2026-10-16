@@ -29,15 +29,14 @@ $$
 \begin{aligned}
 w_{k} &\sim \mathrm{Dirichlet}(\mathbf{1}_{K})\\
 \mu_{k} &\sim \mathrm{DiscreteUniform}(B_{k}) \\
-\sigma_{k} &\sim \mathrm{Gamma}(10, 9/\lambda)
+\sigma_{k} &\sim \mathrm{Gamma}(4, 4/\lambda)
 \end{aligned}
 $$
 
 where $B_{k}$ is the $k$th of $K$ equally spaced bins partitioning
-$[t_{min}, t_{max}]$ and $\lambda = (t_{max} - t_{min})/20$ scales the component
-errors with the length of the interval. The Gamma is also left-censored at
-$\lambda$, so any $\sigma_{k} < \lambda$ is set to $\lambda$, preventing
-components from becoming too narrow. We then evaluate the mixture over the
+$[t_{min}, t_{max}]$ and $\lambda = (t_{max} - t_{min})/20$ is the mean of the
+component errors, scaling them with the length of the interval. We then
+evaluate the mixture over the
 annual grid $t_{j} = t_{min}, ..., t_{max}$ and normalize, in effect generating
 a truncated and discrete empirical distribution
 
@@ -72,7 +71,7 @@ chronology
 ### Sample Dates
 
 Following the generative model outlined above and in the main text, we sample
-years from $v$ using inverse transform sampling.
+years from $\mathbf{v}$ using inverse transform sampling.
 
 $$
 t_{1}, ..., t_{n} \sim p(t \mid \theta) \approx \mathrm{Categorical}(\mathbf{v})
@@ -139,7 +138,7 @@ data for modeling. These are stored in an $n \times m$ measurement matrix
 $\mathbf{M}$ with $n$ samples evaluated over $m$ years.
 
 $$
-\mathrm{M}_{ij} \approx p(F_{i} \mid t_{j}) = N(F_{i} \mid m(t_{j}), s(t_{j})^{2} + z_{i}^{2}) \\
+\mathrm{M}_{ij} \approx p(F_{i} \mid t_{j}) = N(F_{i} \mid m(t_{j}), s(t_{j})^{2} + z_{i}^{2})
 $$
 
 ```r
