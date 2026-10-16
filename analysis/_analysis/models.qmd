@@ -1,0 +1,256 @@
+Here we specify our modeling algorithms for calibrating and summarizing
+radiocarbon dates.
+
+### Summed Probability Distribution
+
+The SPD uses a uniform prior $\text{U}$ to obtain posteriors for each sample in
+$\mathbf{M}$, which means in effect row-normalizing the matrix.
+
+$$
+\mathbf{\tilde{M}} = \mathrm{diag}(\mathbf{M1})^{-1}\mathbf{M}
+$$
+In R:
+
+```r
+M_tilde <- M / rowSums(M)
+```
+
+Then we take the column means of that row-normalized matrix.
+
+$$
+\mathbf{\hat{v}} = \frac{1}{n}\mathbf{\tilde{M}}^{\top}\mathbf{1}
+$$
+In R:
+
+```r
+v <- colMeans(M_tilde)
+```
+
+```{r}
+#| label: spd
+#| file: R/spd.R
+#| code-fold: true
+#| code-summary: R/spd.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: spd-example
+#| time_it: true
+spd(calibrated_dates)
+```
+
+### Composite Kernel Density
+
+There are a variety of KDE methods for summarizing C14 samples (e.g. Bronk
+Ramsey 2017 and McLaughlin 2018), but we use the simplest possible approach
+here, just sampling from each sample's posterior and then running KDE on those
+samples, iterating this some number of times (500 by default). The final
+estimate of the true density is just the column means.
+
+```{r}
+#| label: ckde
+#| file: R/ckde.R
+#| code-fold: true
+#| code-summary: R/ckde.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: ckde-example
+#| time_it: true
+ckde(calibrated_dates)
+```
+
+### Bayesian Gaussian Mixture Model
+
+This is roughly equivalent to the model proposed by Price et al (2021), but not
+exactly the same. There are four notable changes. First, to specify the number
+of mixture components, we use kmeans with different values of K and select the
+one that minimizes BIC. Second, rather than fix the concentration of the
+Dirichlet prior on the mixture weights, we give it a Gamma(1, 1) hyperprior and
+sample it with the other parameters, as in the DPMM. Third, we let the prior on the variance adapt to the
+number of years in the interval. And fourth, to sample the posterior
+distribution, we implement adaptive dual averaging Hamiltonian Monte Carlo in a
+torch module, rather than using Stan.
+
+```{r}
+#| label: bgmm
+#| file: R/bgmm.R
+#| code-fold: true
+#| code-summary: R/bgmm.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: bgmm-example
+#| time_it: true
+bgmm(calibrated_dates)
+```
+
+### Dirichlet Process Mixture Model
+
+We use the DPMM with Polya Urn sampling as recommended by Heaton in the
+[`carbondate`
+documentation](https://tjheaton.github.io/carbondate/reference/PolyaUrnBivarDirichlet.html):
+
+> The library provides two slightly-different update schemes for the MCMC. In
+> this particular function, updating of the DPMM is achieved by a Polya Urn
+> approach (Neal 2000) This is our recommended updating approach based on
+> testing.
+
+holds the cluster assignment of each measurement $i = 1, ..., n$
+
+The
+$c_{i}$ are drawn using Polya Urn sampling 
+
+$$
+c_{i} \mid t_{i}, \xi_{k}, n_{k} \sim \mathrm{Categorical}(r_{i1}, ..., r_{iK+1}), 
+\qquad r_{ik} \propto 
+\begin{cases}
+  n_{k} \hspace{2pt} N(t_{i} \mid \mu_{k}, \tau_{k}^{-1}) 
+    & \quad\text{existing cluster} k \\
+  \alpha_{d} \hspace{2pt} T(t_{i} \mid \mu_{\phi}, \tau_{\phi}, 2\alpha) 
+    & \quad\text{new cluster} K + 1
+\end{cases}
+$$
+
+with $\xi_{k} = \{\mu_{k}, \tau_{k}\}$ being the mean and precision
+($\tau = 1/\sigma^2$) of cluster $k$, $n_{k}$ the size of $k$ excluding $i$,
+$r_{ik}$ the probability of sample $i$ being assigned to $k$, $\alpha_{d}$ the
+concentration parameter of the Dirichlet Process, $T$ the location-scale
+Student's t-distribution with $2\alpha$ degrees of freedom, $\mu_{\phi}$ a
+hyper-parameter specifying the base mean for clusters, $\tau_{\phi}$ the base
+precision of the new cluster t-distribution derived from the Normal-Gamma
+described below. 
+
+The Normal-Gamma serves as the joint prior for the means and precisions of the
+mixture distribution
+
+$$
+\xi_{k} \mid \mu_{\phi} \sim 
+\mathrm{NormalGamma}(\mu_{\phi}, \lambda, \alpha, \beta)
+$$
+
+with $\lambda$ a weight on the component errors. The shape and rate parameters
+of the Gamma are updated each iteration based on the previous iteration's
+calendar age estimates $\hat{t}_{i}$ and the current assignments $c_{i}$. As the
+number of radiocarbon samples assigned to a cluster goes up, the scale parameter
+increases, and with it the expected precision. Conversely, when the spread of
+the calendar ages increases, the rate parameter also goes up, thereby decreasing
+the expected precision. The precision is also penalized when the mean of the
+cluster drifts from $\mu_{\phi}$.
+
+Given the hard cluster assignments $c_{i}$, the conditional for the calendar
+ages can use the Gaussians of the clusters as priors for age estimation, rather
+than the full mixture density
+
+$$
+t_{i} \mid c_{i} = k, F_{i}, \xi_{k} \sim g_{ik}, 
+\qquad
+g_{ik}(t) \propto p(F_{i} \mid t) \hspace{2pt} N(t \mid \mu_{k}, \tau_{k}^{-1})
+$$
+
+Draws from this distribution are obtained using slice sampling [@neal2003]. So,
+the Gibbs sampler assigns a scalar age estimate to each ^14^C during each MCMC
+iteration. Because cluster assignment happens during MCMC, radiocarbon samples
+will wander across clusters in proportion to their likelihood. The individual
+age estimates from each iteration are thus analogous to the mixture weighted
+posterior age estimation method described above.
+
+Gibbs sampling from these conditionals is implemented in performant C++ code in
+the R package `carbondate`. The default number of MCMC iterations is 100,000,
+but that proved impractical for the number of simulations given the resources of
+a typical desktop computer, so we limit sampling to 50,000 iterations. The final
+density estimate is the posterior predictive for the calendar age of a new
+sample, obtained by averaging over a subset $s$ of Gibbs iterations,
+$\hat{v} = 1/n_s \sum \hat{v}^{(s)}$, where each $\hat{v}^{(s)}$ is a mixture of
+the occupied clusters, weighted by $n_k/(n + \alpha_d)$, plus a new-cluster
+term, the Student-t above, weighted by $\alpha_d/(n + \alpha_d)$. Age estimates
+are retained as draws from the posterior age distribution
+$[\hat{t} \mid F, \theta]$ for each radiocarbon date, the per iteration sampled
+ages.
+
+Heaton also recommends an enormous number of iterations - the default is one
+hundred thousand. This, however, is computationally prohibitive for any decently
+large sample. That is why the simulation in (Heaton 2021) uses only 10,000
+iterations, which we follow here.
+
+```{r}
+#| label: dpmm
+#| file: R/dpmm.R
+#| code-fold: true
+#| code-summary: R/dpmm.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: dpmm-example
+#| time_it: true
+dpmm(samples)
+```
+
+### Gaussian Mixture Neural Network
+
+NetC14 is a Gaussian Mixture Neural Network. To define that network, we first
+implement torch modules for the model's forward pass and custom loss. We then
+wrap these in a single model function that runs all the training logic,
+including back-propagation.
+
+
+The model forward pass is encapsulated in  module initialized with $K_{0} = \mathrm{min}(\mathrm{round}(\sqrt{m}), K_{max})$ 
+clusters, where $K_{max}$ is the maximum number of allowed clusters (35 by 
+default). Three length-$K_{0}$ vectors hold the log-transformed mixture 
+parameters, with initial values set in the same manner as the BGMM. To construct 
+the mixture distribution, parameters must be transformed to satisfy certain 
+constraints, including the same ordering constraint placed on means by the BGMM. 
+The logits of the errors are exponentiated, ensuring that they are positive, and 
+SparseMax is applied to the logits of the weights with a temperature $\pi$ 
+controlling how aggressively the activation zeroes them out. The activation 
+works by centering the logits around a threshold and then applying the rectified 
+linear unit (ReLU) activation, with the threshold determined so that positive 
+centered logits sum to one and the rest are set to zero 
+[@martins-astudillo-2016]. Pruning components in this way rather than adding 
+them satisfies the requirement imposed by neural networks that the dimensions of 
+the data be known in advance. 
+
+At initialization, the forward pass module embeds the Gaussian noise parameter 
+$\xi$, the temperature $\pi$, and the counts of samples $n$ and years $m$. It 
+then constructs the mixture distribution and evaluates the mixture over the 
+annually-resolved grid interval $[t_{min}, t_{max}]$, returning an estimate of 
+the density $\mathbf{\hat{v}}$. Tuning for the hyperparameters $\gamma$ and 
+$\pi$ was done through a simple grid search over a range of values using the 
+evaluation method described in the next section, resulting in default values
+$\pi = 1.75$ and $\gamma = 2.5$. The model is trained over 512 epochs using the
+Adam optimizer with a learning rate of 0.005 [@kingma2017]. Density estimates
+$\mathbf{\hat{v}}$ are obtained by setting the model to training mode and
+running multiple forward passes, generating unique estimates
+$\mathbf{\hat{v}}^{(s)}$ with Gaussian noise that are then averaged,
+$\mathbf{\hat{v}} = 1/n_{s} \sum \mathbf{\hat{v}}^{(s)}$, with the potential,
+loosely speaking, to calculate confidence intervals, though they are not 
+strictly probabilistic. Posterior age estimation is conducted in the manner 
+described above.
+
+```{r}
+#| label: netc14
+#| file: R/netc14.R
+#| code-fold: true
+#| code-summary: R/netc14.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: netc14-example
+#| time_it: true
+netc(calibrated_dates)
+```

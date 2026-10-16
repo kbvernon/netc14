@@ -1,0 +1,165 @@
+### Load Calibration
+
+For this modeling exercise, we use the most recent version of IntCal or
+IntCal20. Note that we convert means and errors to fraction modern (`f14c_mu`
+and `f14c_sigma`) since it is more reliable for older samples that may have
+asymmetric uncertainty around the mean.
+
+```{r}
+#| label: intcal20
+
+intcal20 <- structure(
+  read.csv("data/intcal20.csv"),
+  class = c("Calibration", "data.frame"),
+  curve = "IntCal20"
+)
+
+intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
+intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+intcal20
+```
+
+### Simulate Chronology
+
+To simulate a chronology over the interval $[t_{min}, t_{max}]$, we randomly
+sample the mixture parameters $\theta = \{w_{k}, \mu_{k}, \sigma_{k}\}$ for
+$k = 1, ..., K$ components
+
+$$
+\begin{aligned}
+w_{k} &\sim \mathrm{Dirichlet}(\mathbf{1}_{K})\\
+\mu_{k} &\sim \mathrm{DiscreteUniform}(B_{k}) \\
+\sigma_{k} &\sim \mathrm{Gamma}(10, 9/\lambda)
+\end{aligned}
+$$
+
+where $B_{k}$ is the $k$th of $K$ equally spaced bins partitioning
+$[t_{min}, t_{max}]$ and $\lambda = (t_{max} - t_{min})/20$ scales the component
+errors with the length of the interval. The Gamma is also left-censored at
+$\lambda$, so any $\sigma_{k} < \lambda$ is set to $\lambda$, preventing
+components from becoming too narrow. We then evaluate the mixture over the
+annual grid $t_{j} = t_{min}, ..., t_{max}$ and normalize, in effect generating
+a truncated and discrete empirical distribution
+
+$$
+\begin{aligned}
+\bar{\mathbf{v}}_{j} &= \sum_{k} w_{k} \hspace{2pt} f(t_{j} \mid \mu_{k}, \sigma_{k}) \\
+\mathrm{v}_{j} &= \frac{\bar{\mathrm{v}}_{j}}{\sum_{j} \bar{\mathbf{v}}_{j}}
+\end{aligned}
+$$
+
+with $f$ a Gaussian, uniform, or randomly reflected Gamma density parameterized
+by its mean and standard deviation.
+
+```{r}
+#| label: function-simulate-chronology
+#| file: R/simulate-chronology.R
+#| code-fold: true
+#| code-summary: R/simulate-chronology.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: example-chronology
+set.seed(STARTREK)
+
+chronology <- simulate_chronology(500, 3500, 5)
+chronology
+```
+
+### Sample Dates
+
+Following the generative model outlined above and in the main text, we sample
+years from $v$ using inverse transform sampling.
+
+$$
+t_{1}, ..., t_{n} \sim p(t \mid \theta) \approx \mathrm{Categorical}(\mathbf{v})
+$$
+Here are two ways to do that in R:
+
+```r
+cdf <- cumsum(v)
+j <- findInterval(runif(n), cdf, all.inside = TRUE)
+t <- years[j]
+
+# equivalent to
+t <- sample(years, size = n, replace = TRUE, prob = v)
+```
+
+We then pass those years to the calibration curve model and have it predict
+fraction modern measurements for those years.
+
+$$
+\mu(t_{i}) \mid t_{i} \sim N(m(t_{i}), s(t_{i})^{2})
+$$
+in R:
+
+```r
+# Heaton's code refers to this draw as xcalcurve (for n samples)
+xcalcurve <- rnorm(n, mean = mt, sd = st^2)
+```
+
+Finally, we add randomly sampled measurement uncertainty $z_{i}$.
+
+$$
+F_{i} \mid \mu(t_{i}) \sim N(\mu(t_{i}), z_{i}^{2})
+$$
+in R:
+
+```r
+Fi <- rnorm(n, mean = xcalcurve, sd = zi^2)
+```
+
+This and the above `simulate_chronology()` function are based on
+`CreateDataVaryWeight()` used in (Heaton 2021, [github
+link](https://github.com/TJHeaton/NonparametricCalibration/blob/main/SimStudyFuncsFinal.R)).
+
+```{r}
+#| label: function-sample-dates
+#| file: R/sample-dates.R
+#| code-fold: true
+#| code-summary: R/sample-dates.R
+#| eval: false
+```
+
+Example:
+
+```{r}
+#| label: example-sample
+set.seed(STARGATE)
+
+samples <- sample_dates(chronology, 25, intcal20)
+samples
+```
+
+### Calibrate Samples
+
+Most of the algorithms outlined below rely on the calibrated dates as the main
+data for modeling. These are stored in an $n \times m$ measurement matrix
+$\mathbf{M}$ with $n$ samples evaluated over $m$ years.
+
+$$
+\mathrm{M}_{ij} \approx p(F_{i} \mid t_{j}) = N(F_{i} \mid m(t_{j}), s(t_{j})^{2} + z_{i}^{2}) \\
+$$
+
+```r
+# for an individual sample Fi
+# with mt and st being length-m vectors supplied by the calibration curve
+Mi <- dnorm(Fi, mean = mt, sd = sqrt(st^2 + z^2))
+```
+
+```{r}
+#| label: function-calibrate
+#| file: R/calibrate.R
+#| code-fold: true
+#| code-summary: R/calibrate.R
+#| eval: false
+```
+
+```{r}
+#| label: calibrate-dates
+calibrated_dates <- calibrate(samples, intcal20)
+calibrated_dates
+```

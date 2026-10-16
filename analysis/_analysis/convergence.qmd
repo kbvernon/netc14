@@ -1,0 +1,210 @@
+Before running the full evaluation, we check that the BGMM and DPMM samplers
+converge and that NetC14's loss stabilizes. We simulate one chronology for
+each combination of sample size and distribution, holding the interval at 2500
+years and the number of clusters at three. For each chronology, we run four
+chains of the BGMM and DPMM with different seeds and compute the
+rank-normalized split $\hat{R}$ (Vehtari et al 2021) on label-invariant
+quantities: the concentration parameter $\alpha$, the density $p(t)$ at each
+year on a 100-year grid, and, for the DPMM, the calendar age of each sample.
+Values of $\hat{R}$ below 1.01 indicate that the chains agree. To keep the
+BGMM chains targeting the same posterior, the number of components is chosen
+once per chronology by k-means. We also trace the Kullback-Leibler divergence
+of each iteration's density from the mean density over the first 10% of
+iterations, following `carbondate::PlotConvergenceData()`, and record NetC14's
+loss at each epoch.
+
+```{r}
+#| label: function-mixture-diagnostics
+#| file: R/mixture-diagnostics.R
+#| code-fold: true
+#| code-summary: R/mixture-diagnostics.R
+#| eval: false
+```
+
+```{r}
+#| label: convergence-test
+#| cache: true
+#| time_it: true
+#| output: false
+convergence_grid <- expand.grid(
+  n_samples = c(50, 250, 1250),
+  distribution = c("gaussian", "uniform", "skewed"),
+  stringsAsFactors = FALSE
+)
+
+chains <- 1:4
+
+# R-hat for each column of a parameter, e.g., each year of the density
+rhat_table <- function(fits, parameter, ...) {
+  draws <- lapply(fits, get_draws, parameter = parameter, ...)
+  draws <- simplify2array(draws)
+  rhats <- apply(draws, 2, rhat)
+
+  data.frame(model = class(fits[[1]])[1], parameter = parameter, rhat = rhats)
+}
+
+n_scenarios <- nrow(convergence_grid)
+
+rhat_results <- vector("list", n_scenarios)
+kld_results <- vector("list", n_scenarios)
+loss_results <- vector("list", n_scenarios)
+
+for (i in seq_len(n_scenarios)) {
+  set.seed(STARTREK * 6 + i)
+
+  # scenario
+  n_samples <- convergence_grid[["n_samples"]][i]
+  distribution <- convergence_grid[["distribution"]][i]
+  start <- sample(seq(100, 47000), 1)
+  end <- start + 2499
+  years <- seq(start, end, by = 25)
+
+  # simulate chronology, draw samples, and calibrate
+  chronology <- simulate_chronology(start, end, 3, distribution)
+  samples <- sample_dates(chronology, n_samples, intcal20)
+  calibrated_dates <- calibrate(samples, intcal20)
+
+  # training
+  k <- length(initialize(calibrated_dates, seq(start, end), 1:9))
+
+  bgmm_fits <- lapply(chains, \(.seed) {
+    bgmm(calibrated_dates, n_clusters = k, seed = .seed)
+  })
+
+  dpmm_fits <- lapply(chains, \(.seed) {
+    set.seed(.seed)
+    dpmm(samples)
+  })
+
+  netc_model <- netc(calibrated_dates)
+
+  # diagnostics
+  scenario <- data.frame(
+    scenario = i,
+    n_samples = n_samples,
+    distribution = distribution
+  )
+
+  rhats <- rbind(
+    rhat_table(bgmm_fits, "alpha"),
+    rhat_table(bgmm_fits, "density", years = years),
+    rhat_table(dpmm_fits, "alpha"),
+    rhat_table(dpmm_fits, "density"),
+    rhat_table(dpmm_fits, "ages")
+  )
+
+  klds <- rbind(
+    cbind(
+      model = "BGMM",
+      kld_trace(get_draws(bgmm_fits[[1]], "density", years = years))
+    ),
+    cbind(
+      model = "DPMM",
+      kld_trace(get_draws(dpmm_fits[[1]], "density"))
+    )
+  )
+
+  rhat_results[[i]] <- cbind(scenario, rhats)
+  kld_results[[i]] <- cbind(scenario, klds)
+  loss_results[[i]] <- cbind(scenario, attr(netc_model, "training"))
+}
+
+rhat_results <- do.call(rbind, rhat_results)
+kld_results <- do.call(rbind, kld_results)
+loss_results <- do.call(rbind, loss_results)
+```
+
+Maximum $\hat{R}$ by model, parameter, and sample size (grid years where the
+density is constant across all draws return `NaN` and are dropped):
+
+```{r}
+#| label: convergence-summary
+aggregate(rhat ~ model + parameter + n_samples, data = rhat_results, FUN = max)
+```
+
+```{r}
+#| label: plot-convergence
+#| code-fold: true
+#| output: false
+svglite(
+  filename = "figures/convergence.svg",
+  width = 7.5,
+  height = 2.75
+)
+
+par(defaults)
+par(mfrow = c(1, 3), mai = c(0.45, 0.5, 0.25, 0.1))
+
+# R-hat
+with(rhat_results, {
+  sizes <- sort(unique(n_samples))
+  x <- match(n_samples, sizes) + ifelse(model == "BGMM", -0.15, 0.15)
+
+  new_plot(xlim = c(0.5, 3.5), ylim = range(c(1, rhat), na.rm = TRUE))
+  x_axis(at = seq_along(sizes), labels = sizes)
+  y_axis()
+  x_title("Number of Samples")
+  y_title("R-hat", line = 2.5)
+  main("A. Rank-normalized R-hat")
+  add_grid(h = 1.01, nx = NA)
+
+  points(
+    jitter(x, amount = 0.08),
+    rhat,
+    pch = 16,
+    cex = 0.4,
+    col = adjustcolor(theme(model), alpha.f = 0.4)
+  )
+})
+
+add_legend(
+  "topright",
+  legend = c("BGMM", "DPMM"),
+  col = theme("BGMM", "DPMM"),
+  text.col = theme("BGMM", "DPMM"),
+  pch = 16
+)
+
+# KL divergence
+new_plot(xlim = c(0, 1), ylim = range(kld_results[["kld"]]))
+x_axis()
+y_axis()
+x_title("Proportion of Iterations")
+y_title("KL Divergence", line = 2.5)
+main("B. Divergence from Initial Density")
+add_grid()
+
+for (.s in split(kld_results, ~ model + scenario)) {
+  lines(
+    .s[["iter"]] / max(.s[["iter"]]),
+    .s[["kld"]],
+    col = theme(.s[["model"]][1]),
+    lwd = 0.6
+  )
+}
+
+# NetC14 loss
+new_plot(xlim = range(loss_results[["epoch"]]), ylim = c(0, 1))
+x_axis()
+y_axis()
+x_title("Epoch")
+y_title("Scaled Loss", line = 2.5)
+main("C. NetC14 Loss")
+add_grid()
+
+for (.s in split(loss_results, ~scenario)) {
+  .loss <- .s[["total"]]
+  lines(
+    .s[["epoch"]],
+    (.loss - min(.loss)) / diff(range(.loss)),
+    col = theme("NetC14"),
+    lwd = 0.6
+  )
+}
+
+dev.off()
+```
+
+::: {#convergence}
+![](/figures/convergence.svg)
+:::

@@ -1,0 +1,180 @@
+We evaluate the models here against a large number of simulated chronologies and
+radiocarbon samples. To save ourselves some time, we also run these simulations
+in parallel. Generally speaking, running torch models in parallel is a bad idea
+since torch has built-in parallelism that could lead to thread contests. We try
+to account for this by limiting the number of threads in each parallel process
+to one. Running my PC at full tilt on 14 of 16 cores reduces the total wall time
+(in hours) for the evaluation by an order of magnitude.
+
+Each simulation looks like the example above, following the generative model.
+The steps are as follows:
+
+1. Sample a starting year.
+2. Simulate a chronology.
+3. Sample dates from the chronology.
+4. Calibrate the dates.
+5. Train models with dates.
+6. Infer chronology and sample ages.
+7. Evaluate models.
+
+These steps are repeated for each simulation. Currently, there are 3 (n_years)
+\* 3 (n_samples) \* 3 (n_clusters) \* 3 (distribution) = 81 starting conditions
+that are repeated 28 times each, resulting in 2268 unique simulations with
+randomization.
+
+**Metrics**
+
+$$
+\begin{aligned}
+\text{MAE} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left| [\hat{t}_{i} \mid F_{i}] - t_{i} \right| \\
+\text{TVD} &= 0.5 \sum_{j=1}^{m} \hspace{2pt} \left| v_{j} - \hat{v}_{j} \right|
+\end{aligned}
+$$
+
+```{r}
+#| label: metrics
+#| file: R/metrics.R
+#| code-fold: true
+#| code-summary: R/metrics.R
+#| eval: false
+```
+
+**Simulations**
+
+```{r}
+#| label: model-evaluation
+#| cache: true
+#| time_it: true
+#| output: false
+# define starting conditions for simulations
+evaluation_grid <- expand.grid(
+  n_years = c(500, 2500, 12500),
+  n_samples = c(50, 250, 1250),
+  n_clusters = c(1, 3, 9),
+  distribution = c("gaussian", "uniform", "skewed"),
+  stringsAsFactors = FALSE
+)
+
+# repeat each combination n times
+i <- rep(seq_len(nrow(evaluation_grid)), times = 28)
+evaluation_grid <- evaluation_grid[i, ]
+rownames(evaluation_grid) <- NULL
+
+n_iter <- nrow(evaluation_grid)
+
+# set up clusters
+clusters <- makeCluster(14)
+
+fns <- c(
+  "bgmm.R",
+  "calibrate.R",
+  "ckde.R",
+  "constants.R",
+  "dataframe-helpers.R",
+  "dpmm.R",
+  "metrics.R",
+  "mixture-helpers.R",
+  "netc14.R",
+  "sample-dates.R",
+  "simulate-chronology.R",
+  "spd.R"
+)
+
+clusterExport(
+  clusters,
+  varlist = c("fns", "evaluation_grid", "intcal20"),
+  envir = environment()
+)
+
+clusterEvalQ(clusters, {
+  library(carbondate)
+  library(torch)
+  torch_set_num_threads(1)
+  lapply(file.path("R", fns), source)
+})
+
+# run simulations in parallel
+evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
+  set.seed(STARTREK + i)
+
+  # scenario
+  n_years <- evaluation_grid[["n_years"]][i]
+  n_clusters <- evaluation_grid[["n_clusters"]][i]
+  n_samples <- evaluation_grid[["n_samples"]][i]
+  distribution <- evaluation_grid[["distribution"]][i]
+  start <- sample(seq(100, 49500 - n_years), 1)
+  end <- start + n_years - 1
+
+  # simulate chronology, draw samples, and calibrate
+  chronology <- simulate_chronology(start, end, n_clusters, distribution)
+  samples <- sample_dates(chronology, n_samples, intcal20)
+  calibrated_dates <- calibrate(samples, intcal20)
+
+  # training
+  models <- list(
+    ckde(calibrated_dates),
+    bgmm(calibrated_dates),
+    dpmm(samples),
+    netc(calibrated_dates),
+    spd(calibrated_dates)
+  )
+
+  # evaluation
+  years <- seq(start, end)
+  true_ages <- samples[["cal_age"]]
+
+  evaluations <- lapply(models, \(.model) {
+    .density <- density(.model, years)[["density"]]
+    .ages <- predict(.model, calibrated_dates)
+
+    data.frame(
+      tvd = tvd(.density, chronology),
+      wd = wd(.density, chronology),
+      mae = mae(.ages, true_ages),
+      mse = mse(.ages, true_ages)
+    )
+  })
+
+  evaluations <- do.call(rbind, evaluations)
+
+  # baseline
+  oracle_ages <- predict(chronology, calibrated_dates)
+  mae_oracle <- mae(oracle_ages, true_ages)
+  mse_oracle <- mse(oracle_ages, true_ages)
+
+  # collect and return
+  e_clusters <- vapply(models, count_components, integer(1))
+  elapsed <- sapply(models, attr, which = "elapsed")
+
+  sim <- data.frame(
+    iter = i,
+    model = c("CKDE", "BGMM", "DPMM", "NetC14", "SPD"),
+    start = start,
+    n_years = n_years,
+    n_samples = n_samples,
+    n_clusters = n_clusters,
+    distribution = distribution,
+    e_clusters = e_clusters,
+    mae_oracle = mae_oracle,
+    mse_oracle = mse_oracle,
+    elapsed = elapsed
+  )
+
+  cbind(sim, evaluations)
+})
+
+# close parallel processes and collect results
+stopCluster(clusters)
+evaluation_results <- do.call(rbind, evaluation_results)
+```
+
+Save results.
+
+```{r}
+#| label: save-evaluation
+write.csv(
+  evaluation_results,
+  "data/evaluation-results.csv",
+  row.names = FALSE
+)
+```

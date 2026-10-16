@@ -1,0 +1,67 @@
+### Generative model
+
+According to the generative model, $n$ years $t_{1}, ..., t_{n}$ are sampled
+from the underlying age distribution $p(t)$, what we refer to in the code as a
+"chronology". Then fraction modern measurements $F_{i}$ are sampled from the
+calibration curve $\mu(t)$ evaluated at those ages. Formally,
+
+$$
+\begin{aligned}
+t_{1}, ..., t_{n} &\sim p(t) \\
+F_{i} &\sim N(\mu(t_{i}), z_{i}^{2})
+\end{aligned}
+$$
+
+If we evaluate $p(t)$ over a discrete grid of $m$ years and normalize the result 
+so that it sums to one, we get the vector $\mathbf{v}$.
+
+### Mixture density
+
+To estimate the age distribution, we condition on the parameters $\theta$ of a
+mixture distribution:
+
+$$
+p(t \mid \theta) = \sum_{k=1}^{K} w_{k} \hspace{2pt} f(t \mid \mu_{k}, \,\sigma_{k}^{2})
+$$
+
+where the weights must sum to one and $f$ is typically a Gaussian. The
+parameters are estimated using Bayes' Theorem:
+
+$$
+p(\theta \mid F) \propto p(F \mid \theta) \hspace{2pt} p(\theta)
+$$
+
+with $p(F \mid \theta)$ being the mixture likelihood and $p(\theta)$ the prior
+on the parameters.
+
+### Mixture likelihood
+
+The likelihood of a given sample $F_{i}$ is
+
+$$
+p(F_{i} \mid \theta) = \int p(F_{i} \mid t) \hspace{2pt} p(t \mid \theta) \hspace{2pt} dt
+$$
+
+As Price *et al* 2021 show, this integral can be approximated with Riemann sums.
+Let $\mathrm{M}_{i} \approx p(F_{i} \mid t)$ be a length-$m$ row vector and
+$\mathbf{v} \approx p(t \mid \theta)$ be a length-$m$ column vector. Then
+
+$$
+\mathbf{h} = \mathbf{M}\mathbf{v}
+$$
+
+This is equation 14 in Price *et al* 2021. The vector $\mathbf{h}$, whose
+elements are the individual likelihoods, is just the matrix product of the
+measurement matrix $\mathbf{M}$ and the discretized age distribution
+$\mathbf{v}$. The total log likelihood is the sum the elements of $\mathbf{h}$.
+
+$$
+\log p(F \mid \theta) \approx \sum_{i=1}^{n} \log \text{h}_{i}(\theta)
+$$
+
+In R:
+
+```r
+h <- M %*% v
+sum(log(h))
+```

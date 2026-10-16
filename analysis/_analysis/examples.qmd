@@ -1,0 +1,255 @@
+Here is a complete example of a single simulation.
+
+```{r}
+#| label: example
+#| time_it: true
+set.seed(STARTREK)
+
+start <- 500
+end <- 3500
+n_clusters <- 5
+n_samples <- 1250
+
+chronology <- simulate_chronology(start, end, n_clusters)
+samples <- sample_dates(chronology, n_samples, calibration = intcal20)
+calibrated_dates <- calibrate(samples, intcal20)
+
+models <- list(
+  spd = spd(calibrated_dates),
+  ckde = ckde(calibrated_dates),
+  bgmm = bgmm(calibrated_dates),
+  dpmm = dpmm(samples),
+  netc = netc(calibrated_dates),
+  oracle = chronology
+)
+
+densities <- lapply(models, density, years = seq(start, end))
+```
+
+```{r}
+#| label: plot-example-densities
+#| code-fold: true
+#| output: false
+svglite(
+  filename = "figures/example-densities.svg",
+  width = 5.5,
+  height = 4
+)
+
+layout(
+  matrix(c(1, 0, 0, 0, 0, 0, 2, 0, 3), nrow = 3, ncol = 3, byrow = TRUE),
+  heights = c(0.7, 0.08, 1),
+  widths = c(1, 0.01, 0.23)
+)
+
+par(defaults)
+par(mai = c(0, 0.65, 0, 0))
+
+plot(
+  subset(intcal20, cal_age <= end & cal_age >= start),
+  xlab = NULL,
+  xaxs = "i",
+  yaxs = "i"
+)
+
+par(mai = c(0.5, 0.65, 0, 0))
+
+with(
+  rbind(densities[["dpmm"]], densities[["netc"]]),
+  new_plot(
+    xlim = c(start, end),
+    ylim = c(min(conf_lo, na.rm = TRUE), max(conf_hi, na.rm = TRUE)),
+    xaxs = "i",
+    yaxs = "i"
+  )
+)
+
+x_axis()
+y_axis()
+
+x_title("Years Before Present (t)")
+y_title("Density", line = 2.5)
+
+add_grid()
+
+with(densities, {
+  plot(bgmm, add = TRUE, col = theme("BGMM"))
+  plot(dpmm, add = TRUE, col = theme("DPMM"), se = TRUE)
+  plot(netc, add = TRUE, col = theme("NetC14"), se = TRUE)
+  plot(ckde, add = TRUE, col = theme("CKDE"))
+  plot(spd, add = TRUE, col = theme("SPD"), lty = "dotted")
+  plot(oracle, add = TRUE, col = theme("Oracle"), lwd = 2, lty = "dashed")
+})
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+add_legend(
+  "center",
+  legend = c("True p(t)", "SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+  col = theme("Oracle", "SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+  text.col = theme("Oracle", "SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+  lwd = rep(1.2, 6),
+  lty = c("dashed", "dotted", "solid", "solid", "solid", "solid")
+)
+
+dev.off()
+```
+
+::: {#example-densities}
+![](/figures/example-densities.svg){width=75%}
+:::
+
+Note: the above figure is pretty noisy, so we show confidence intervals only for
+the DPMM and NetC14.
+
+**Estimate age**
+
+Getting the posterior distribution over ages for each sample is just a matter of
+multiplying the chronology across each row of the calibration matrix and then
+dividing each row by its sum:
+
+$$
+\begin{aligned}
+p(t \mid F_{i}, \theta) &= \frac{p(F_{i} \mid t) \hspace{2pt} p(t \mid \theta)}{p(F_{i} \mid \theta)} \\
+\mathbf{q} &= \mathrm{diag}(\mathbf{h})^{-1} \mathbf{M} \hspace{2pt} \mathrm{diag}(\mathbf{v})
+\end{aligned}
+$$
+
+In matrix form, that is
+
+$$
+\mathbf{q} = \mathrm{diag}(\mathbf{h})^{-1} \mathbf{M} \hspace{2pt} \mathrm{diag}(\mathbf{v})
+$$
+
+and in R (at least one very fast way to do this with recycling) is
+
+In words, we multiply each row of the matrix $\mathbf{M}$ element-wise by the
+global density $\mathbf{v} \approx p(t \mid \theta)$, and then normalize that
+quantity by dividing each element by the row sum $\text{h}_{i}(\theta)$, the
+mixture likelihood of that sample - in effect, concentrating the posterior
+probability mass of each sample around the modes of the mixture model, as shown
+in @fig-example-age. The resulting matrix $\mathbf{q}$ has the same dimensions
+as $\mathbf{M}$. Getting a scalar estimate of age for each radiocarbon sample
+just requires drawing an age from each row of $\mathbf{q}$ using a method like
+inverse transform sampling (called *quantiles* in R), which for row $i$ is
+roughly equivalent to `sample(t, size = 1, prob = q[i,])` in R.
+
+```{r}
+#| label: example-posterior
+
+v <- densities[["netc"]][["density"]]
+q <- t(t(calibrated_dates) * v)
+q <- q / rowSums(q)
+```
+
+The figure below demonstrates this. The blue line shows the calibration
+likelihood of a sample, the red dashed line shows the prior, i.e., the
+chronology or density estimated by the mixture, and the black line shows the
+posterior, or the product of the likelihood and the prior. The crucial result is
+to concentrate the probability mass at the nearest mode in the density, which is
+presumably where the sample comes from.
+
+```{r}
+#| label: plot-example-age
+#| code-fold: true
+#| output: false
+years <- seq(start, end)
+curve <- subset(intcal20, cal_age >= start & cal_age <= end)
+
+Si <- 2700
+
+f14c_mu <- subset(curve, cal_age == Si)[["f14c_mu"]]
+f14c_sigma <- f14c_mu * 25 / LIBBY
+
+Ci <- calibrate_sample(f14c_mu, f14c_sigma, curve)
+Ci <- Ci / sum(Ci)
+
+modes <- c(2475, 2725)
+v <- 0.2 * dnorm(years, modes[1], 40) + 0.8 * dnorm(years, modes[2], 40)
+v <- v / sum(v)
+
+Pi <- Ci * v
+Pi <- Pi / sum(Pi)
+
+support <- which(Ci > max(Ci) * 0.0001 | v > max(v) * 0.01)
+xlim <- c(years[min(support)], years[max(support)])
+
+svglite(
+  filename = "figures/example-age.svg",
+  width = 5.5,
+  height = 4
+)
+
+layout(
+  matrix(c(1, 0, 0, 0, 0, 0, 2, 0, 3), nrow = 3, ncol = 3, byrow = TRUE),
+  heights = c(0.7, 0.08, 1),
+  widths = c(1, 0.01, 0.23)
+)
+
+par(defaults)
+par(mai = c(0, 0.65, 0, 0))
+
+plot(
+  subset(curve, cal_age <= xlim[2] & cal_age >= xlim[1]),
+  xlab = NULL,
+  xaxs = "i",
+  yaxs = "i"
+)
+
+par(mai = c(0.5, 0.65, 0, 0))
+
+new_plot(
+  xlim = xlim,
+  ylim = c(0, max(Ci, v, Pi) * 1.05),
+  xaxs = "i",
+  yaxs = "i"
+)
+
+x_axis()
+y_axis()
+
+x_title("Years Before Present (t)")
+y_title("Density", line = 2.5)
+
+add_grid()
+
+abline(v = Si, col = coolors("gray"), lty = "dashed", lwd = 1.1)
+text(
+  x = Si + 10,
+  y = max(Ci, v, Pi) * 1.03,
+  labels = "True age",
+  adj = c(0, 1),
+  col = coolors("gray"),
+  cex = 0.9
+)
+
+lines(years, Ci, col = coolors("blue"))
+lines(years, v, col = coolors("orange"))
+lines(years, Pi, col = coolors("brown"), lwd = 1.3)
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+add_legend(
+  "center",
+  legend = c("Likelihood", "Prior", "Posterior"),
+  col = coolors("blue", "orange", "brown"),
+  text.col = coolors("blue", "orange", "brown"),
+  lwd = c(1, 1, 1.3),
+  lty = c("solid", "solid", "solid")
+)
+
+dev.off()
+```
+
+::: {#example-age}
+![](/figures/example-age.svg){width=75%}
+:::
+
+Scalar age estimates are then drawn from each row of $\mathbf{q}$:
+
+$$
+\begin{aligned}
+\hat{t}_{i} &\sim p(t \mid F_{i}, \,\theta) \\
+\hat{t}_{i} &\sim \mathrm{Categorical}(\mathbf{q}_{i})
+\end{aligned}
+$$

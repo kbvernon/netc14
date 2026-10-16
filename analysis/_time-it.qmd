@@ -1,0 +1,68 @@
+```{r}
+#| label: time-code-chunks
+#| echo: false
+
+# we are deep into overkill territory here
+knitr::knit_hooks$set(
+  time_it = local({
+    function(before, options) {
+      if (before) {
+        assign('.start_time', Sys.time(), envir = .GlobalEnv)
+      } else {
+        proc_time <- difftime(Sys.time(), .start_time, units = "secs")
+        proc_time <- round(as.numeric(proc_time), 2)
+
+        mins <- proc_time %/% 60
+        secs <- proc_time %% 60
+
+        proc_time <- if (mins > 0) {
+          sprintf("%dm %.1fs", mins, secs)
+        } else {
+          sprintf("%.1fs", secs)
+        }
+
+        sprintf(
+          "<p class='chunk-timing'>%s</p>",
+          paste0("Code execution time: ", proc_time)
+        )
+      }
+    }
+  })
+)
+```
+
+```{=html}
+<style>
+.code-copy-outer-scaffold:has(.chunk-timing) {
+  position: relative;
+}
+
+.code-copy-outer-scaffold:has(.chunk-timing) .sourceCode.cell-code {
+  margin-bottom: 2em;
+}
+
+.chunk-timing {
+  position: absolute;
+  bottom: -1.5em;
+  right: 0;
+  text-align: right;
+  font-size: 0.75em;
+  margin: 0;
+  padding: 0;
+  color: rgba(150, 150, 150, 1);
+}
+
+p:has(img) { 
+  text-align: center; 
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() { 
+  document.querySelectorAll(".chunk-timing").forEach(el => {
+    const code = el.closest(".cell").querySelector(".code-copy-outer-scaffold");
+    if (code) code.appendChild(el);    
+  });
+});  
+</script>
+```
