@@ -7,13 +7,15 @@
 #' @param max_clusters maximum number of Gaussian clusters to initialize
 #'   (default is 35)
 #' @param w_gauss weight for Gaussian noise applied to parameters (default 0.02)
-#' @param gamma weight for the precision penalty in the loss (default 2.5);
+#' @param gamma weight for the precision penalty in the loss (default 1.5);
 #'   the penalty is `gamma * sqrt(n_samples) * sum(n_years / errors^2)`, so
 #'   larger values push components toward wider, lower-precision shapes
-#' @param pi sparsemax temperature applied to mixture logits (default 1.75);
+#' @param pi sparsemax temperature applied to mixture logits (default 1.0);
 #'   smaller values produce sparser weights
 #' @param n_epochs number of training epochs (default 512)
 #' @param learning_rate learning rate for Adam optimizer (default 0.005)
+#' @param seed integer, torch seed for initialization and noise (default
+#'   `STARTREK`)
 #'
 #' @return A torch `nn_module` of class `NetC14`. Attributes: `start`, `end`,
 #'   `n_samples`, `elapsed`, and `training` (a data.frame with columns `epoch`,
@@ -26,13 +28,14 @@ netc <- function(
   calibrated_dates,
   max_clusters = 35,
   w_gauss = 0.02,
-  gamma = 2.5,
-  pi = 1.75,
+  gamma = 1.5,
+  pi = 1.0,
   n_epochs = 512,
-  learning_rate = 0.005
+  learning_rate = 0.005,
+  seed = STARTREK
 ) {
   .start <- Sys.time()
-  torch::local_torch_manual_seed(STARTREK)
+  torch::local_torch_manual_seed(seed)
 
   # set up model for training
   start <- attr(calibrated_dates, "start")
@@ -158,7 +161,6 @@ nn_loss <- torch::nn_module(
   "LossC14",
   initialize = function(calibrated_dates, gamma) {
     self$M <- torch::torch_tensor(calibrated_dates)
-    self$N <- sqrt(nrow(calibrated_dates))
     self$S <- ncol(calibrated_dates)
     self$gamma <- gamma
   },
@@ -167,7 +169,7 @@ nn_loss <- torch::nn_module(
     -torch::torch_log(h + EPS)$sum()
   },
   noise = function(e) {
-    self$gamma * self$N * self$S * torch::torch_sum((1 / e)^2)
+    self$gamma * self$S * torch::torch_sum((1 / e)^2)
   },
   forward = function(v, e) {
     self$nll(v) + self$noise(e)
@@ -235,6 +237,21 @@ predict.NetC14 <- function(object, calibrated_dates, n_draws = 1000, ...) {
   ))
 
   structure(ages, class = c("Ages", class(ages)))
+}
+
+#' Log Likelihood of NetC14
+#'
+#' @param object a fitted `NetC14` model
+#' @param calibrated_dates an n x m matrix of calibration likelihoods evaluated
+#'   over the same years the model was fit to
+#' @param ... additional arguments (unused)
+#'
+#' @return The log marginal likelihood of the radiocarbon samples, integrating
+#'   over the model's estimated density.
+logLik.NetC14 <- function(object, calibrated_dates, ...) {
+  years <- torch::torch_arange(attr(object, "start"), attr(object, "end"))
+  v <- as_vector(object(years))
+  sum(log(calibrated_dates %*% v + EPS))
 }
 
 #' Print NetC14
