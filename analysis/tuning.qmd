@@ -96,18 +96,22 @@ document.addEventListener("DOMContentLoaded", function() {
 
 ## Introduction
 
-**Goal:** Optimize NetC14 hyperparameters $\pi$ and $\gamma$ - sparsemax 
-temperature and weight on precision penalty - with respect to model performance 
-in (i) mean absolute error (MAE) of calibration (or error in estimating true 
-ages of samples) and (ii) total variation distance of summary (or error in 
-estimating true density from which samples are drawn).
+**Goal:** Optimize the NetC14 hyperparameter $\gamma$ - the weight on the
+precision penalty - with respect to the held-out likelihood of radiocarbon
+samples. Because this criterion uses only the observed samples, it can also be
+computed on real data where the true ages and density are unknown. The sparsemax
+temperature $\pi$ is fixed at 1, since it overlaps with $\gamma$ in promoting
+sparsity, and tuning both leaves the optimum poorly identified.
 
-**Data:** For model tuning, data are simulated according to the generative 
+**Data:** For model tuning, data are simulated according to the generative
 model.
 
-**Method:** We sweep a fixed grid of ($\pi$, $\gamma$) configurations against a
-fixed panel of simulated chronologies, scoring every configuration against the 
-same set of chronologies to focus on variance across configurations. 
+**Method:** We sweep a fixed grid of $\gamma$ values against a fixed panel of
+simulated chronologies, scoring every value against the same set of
+chronologies to focus on variance across values. Samples in
+each chronology are split into five folds. Each configuration is fit to four
+folds and scored by the log marginal likelihood of the fifth, rotating through
+all five.
 
 ## R Preamble
 
@@ -121,7 +125,6 @@ library(torch)
 fns <- c(
   "calibrate.R",
   "constants.R",
-  "metrics.R",
   "mixture-helpers.R",
   "plot-helpers.R",
   "plot-theme.R",
@@ -156,17 +159,13 @@ intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
 intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
 ```
 
-The tuning grid crosses $\pi \times \gamma$ configurations. The chronology grid 
-crosses problem size, sample count, mixture complexity, and component
-distribution scenarios. Every
-configuration is evaluated against every chronological scenario.
+The chronology grid crosses problem size, sample count, mixture complexity, and
+component distribution scenarios. Every value of $\gamma$ is evaluated against
+every chronological scenario.
 
 ```{r}
 #| label: tuning-grid
-tuning_grid <- expand.grid(
-  pi = seq(0.5, 2.0, by = 0.25),
-  gamma = seq(0.5, 2.5, by = 0.25)
-)
+gammas <- seq(1, 7, by = 0.5)
 
 evaluation_grid <- expand.grid(
   n_years = c(500, 2500, 12500) - 1,
@@ -176,14 +175,14 @@ evaluation_grid <- expand.grid(
   stringsAsFactors = FALSE
 )
 
-n_configs <- nrow(tuning_grid)
 n_scenarios <- nrow(evaluation_grid)
 ```
 
 ## Tuning
 
 To make this loop as efficient as possible, we precompute the chronologies and
-draw samples from them.
+draw samples from them. Each chronology is simulated **once** and reused across 
+all configurations. 
 
 ```{r}
 #| label: simulation-loop
@@ -206,18 +205,25 @@ for (i in seq_len(n_scenarios)) {
   chronology <- simulate_chronology(start, end, n_clusters, distribution)
   samples <- sample_dates(chronology, n_samples, intcal20)
 
-  simulations[[i]] <- list(
-    id = i,
-    start = start,
-    n_years = n_years,
-    chronology = chronology,
-    samples = samples
-  )
+  # k-fold
+  folds <- split(seq_len(n_samples), sample(rep_len(1:5, n_samples)))
+
+  simulations[[i]] <- lapply(gammas, \(gamma) {
+    list(
+      id = i,
+      start = start,
+      gamma = gamma,
+      samples = samples,
+      folds = folds
+    )
+  })
 }
+
+simulations <- do.call(c, simulations)
 ```
 
-Each chronology is simulated **once** and reused across all configurations. The 
-configuration sweep only has to fit NetC14.
+The configuration sweep only has to fit NetC14 and evaluate against each hold 
+out.
 
 ```{r}
 #| label: tuning-loop
@@ -226,11 +232,9 @@ configuration sweep only has to fit NetC14.
 clusters <- makeCluster(14)
 
 fns <- c(
-  "bgmm.R",
   "calibrate.R",
   "constants.R",
   "dataframe-helpers.R",
-  "metrics.R",
   "mixture-helpers.R",
   "netc14.R",
   "sample-dates.R",
@@ -242,9 +246,7 @@ clusterExport(
   clusters,
   varlist = c(
     "fns",
-    "intcal20",
-    "n_configs",
-    "tuning_grid"
+    "intcal20"
   ),
   envir = environment()
 )
@@ -255,48 +257,37 @@ clusterEvalQ(clusters, {
   lapply(file.path("R", fns), source, verbose = FALSE)
 })
 
-tuning_results <- parLapply(clusters, simulations, \(scenario) {
-  # scenario
-  years <- with(scenario, seq(start, start + n_years - 1))
-  calibrated_dates <- with(scenario, calibrate(samples, intcal20))
-  true_ages <- scenario[["samples"]][["cal_age"]]
-  true_density <- scenario[["chronology"]]
+tuning_results <- parLapplyLB(
+  clusters,
+  simulations,
+  \(scenario) {
+    gamma <- scenario[["gamma"]]
 
-  # configurations
-  results <- vector("list", n_configs)
+    calibrated_dates <- with(scenario, calibrate(samples, intcal20))
 
-  for (i in seq_len(n_configs)) {
-    gamma <- tuning_grid[["gamma"]][i]
-    pi <- tuning_grid[["pi"]][i]
-    netc_mod <- netc(calibrated_dates, gamma = gamma, pi = pi)
-    estimated_density <- density(netc_mod, years)[["density"]]
-    estimated_ages <- predict(netc_mod, calibrated_dates)
+    heldout <- 0
 
-    results[[i]] <- data.frame(
-      pi = pi,
+    for (fold in scenario[["folds"]]) {
+      training_dates <- structure(
+        calibrated_dates[-fold, ],
+        class = class(calibrated_dates),
+        start = attr(calibrated_dates, "start"),
+        end = attr(calibrated_dates, "end")
+      )
+      netc_cv <- netc(training_dates, gamma = gamma, pi = 1)
+      ll <- logLik(netc_cv, calibrated_dates[fold, , drop = FALSE])
+      heldout <- heldout + ll
+    }
+
+    data.frame(
+      scenario = scenario[["id"]],
+      start = scenario[["start"]],
       gamma = gamma,
-      tvd = tvd(estimated_density, true_density),
-      wd = wd(estimated_density, true_density),
-      mae = mae(estimated_ages, true_ages),
-      mse = mse(estimated_ages, true_ages)
+      nll = -sum(heldout) / nrow(calibrated_dates)
     )
-  }
-
-  # oracle
-  oracle_ages <- predict(scenario[["chronology"]], calibrated_dates)
-  maeo <- mae(oracle_ages, true_ages)
-  mseo <- mse(oracle_ages, true_ages)
-
-  # return
-  results <- do.call(rbind, results)
-  transform(
-    results,
-    scenario = scenario[["id"]],
-    start = scenario[["start"]],
-    maeo = maeo,
-    mseo = mseo
-  )
-})
+  },
+  chunk.size = 1
+)
 
 stopCluster(clusters)
 tuning_results <- do.call(rbind, tuning_results)
@@ -311,19 +302,13 @@ tuning_results <- merge(tuning_results, evaluation_grid, all.x = TRUE)
 
 tuning_results <- tuning_results[c(
   "scenario",
-  "pi",
   "gamma",
   "n_years",
   "n_samples",
   "n_clusters",
   "distribution",
   "start",
-  "tvd",
-  "wd",
-  "mae",
-  "mse",
-  "maeo",
-  "mseo"
+  "nll"
 )]
 
 write.csv(
@@ -335,24 +320,27 @@ write.csv(
 
 ## Results
 
-The x-axis measures how well the model does at *summarizing* dates (at 
-estimating the true density). TVD refers to "Total Variation Distance". The 
-y-axis measures how well the model does at *calibrating* dates (at 
-estimating the true age of each sample). MAE is L1 loss or "Mean Absolute 
-Error". Note that we normalize the calibration score using an oracle model.
+Held-out NLL is normalized within each scenario as the difference from the best
+configuration for that scenario, so scenarios with different sample sizes and
+intervals are comparable.
 
 ```{r}
 #| label: aggregate-results
 tuning_results <- transform(
   tuning_results,
-  mae = (mae - maeo) / maeo
+  nll = nll - ave(nll, scenario, FUN = min)
 )
 
 tuning_results <- aggregate(
-  cbind(tvd, mae) ~ pi + gamma,
+  nll ~ gamma,
   data = tuning_results,
-  FUN = median
+  FUN = \(.x) quantile(.x, c(0.25, 0.5, 0.75))
 )
+
+tuning_results <- do.call(data.frame, tuning_results)
+names(tuning_results) <- c("gamma", "lower", "median", "upper")
+
+best <- tuning_results[which.min(tuning_results[["median"]]), ]
 ```
 
 ```{r}
@@ -365,31 +353,26 @@ svglite(
   height = 3
 )
 
-xlim <- quantile(tuning_results[["tvd"]], probs = c(0, 0.95), names = FALSE)
-ylim <- quantile(tuning_results[["mae"]], probs = c(0, 0.95), names = FALSE)
-
 par(defaults)
-par(mai = c(0.5, 0.5, 0, 0))
+par(mai = c(0.6, 0.6, 0, 0))
 
-new_plot(xlim, ylim)
+with(tuning_results, new_plot(range(gamma), range(lower, upper)))
 add_grid()
 
 with(
   tuning_results,
-  points(
-    tvd,
-    mae,
-    pch = 19,
-    col = adjustcolor(coolors("gray"), 0.75),
-    cex = 1
-  )
+  segments(gamma, lower, gamma, upper, col = coolors("gray"))
 )
+
+with(tuning_results, points(gamma, median, pch = 19, col = coolors("gray")))
+
+with(best, points(gamma, median, pch = 19, col = coolors("orange"), cex = 1.5))
 
 x_axis()
 y_axis()
 
-x_title("SUMMARIZING [TVD]")
-y_title("CALIBRATING [MAE-Recovery]")
+x_title("PRECISION PENALTY [γ]")
+y_title("HELD-OUT NLL [Δ]")
 
 dev.off()
 ```
@@ -400,30 +383,13 @@ dev.off()
 
 ### Optimal configuration
 
-The objectives of calibrating and summarizing radiocarbon dates should be 
-complementary - a better estimate of the true density should lead to a better 
-estimate of the true ages, and vice versa, but this is not guaranteed. 
-Especially for mixture models, the issue of non-identifiability can lead to
-models that do equally well at reconstructing the true density, but offer 
-different point estimates of the true ages. This is most likely exacerbated by
-uncertainty in the calibration curve.
-
-The Pareto Front represents the set of configurations where you cannot improve 
-one objective without sacrificing the other. Strictly speaking, we want the set 
-of configurations that are non-dominated, meaning no other configuration beats 
-them on both objectives.
+The optimal $\gamma$ minimizes the median held-out NLL across scenarios. It is
+highlighted in orange in the figure above, with whiskers spanning the
+interquartile range.
 
 ```{r}
 #| label: best-configuration
-pareto <- function(x, y) {
-  vapply(
-    seq_len(length(x)),
-    function(i) !any(x <= x[i] & y <= y[i] & (x < x[i] | y < y[i])),
-    logical(1)
-  )
-}
-
-subset(tuning_results, pareto(tvd, mae))
+best
 ```
 
 ## Session Info

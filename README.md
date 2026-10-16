@@ -19,33 +19,18 @@ This repository contains code and figures for our paper:
 **Preprint**: [manuscript.pdf](/manuscript/manuscript.pdf)
 
 **Supplement**:\
-[01-analysis.html](https://kbvernon.github.io/netc14/R/01-analysis.html)\
-[02-tuning.html](https://kbvernon.github.io/netc14/R/02-tuning.html)\
-[03-timing.html](https://kbvernon.github.io/netc14/R/03-timing.html)
+[analysis.html](https://kbvernon.github.io/netc14/analysis/analysis.html)\
+[tuning.html](https://kbvernon.github.io/netc14/analysis/tuning.html)\
+[timing.html](https://kbvernon.github.io/netc14/analysis/timing.html)
 
 ## Contents
 
-📂 [\_extensions](/_extensions) has Quarto extension for compiling manuscript\
-📂 [data](/data) contains all data required for analysis\
-  ⊢ 💾 intcal20.csv\
-  ⊢ 💾 radiocarbon.csv\
-  ⊢ output records\
-📂 [figures](/figures) contains all figures included in the paper\
-📂 [manuscript](/manuscript) contains the pre-print\
-  ⊢ 📄 [bibliography.bib](/manuscript/bibliography.bib)\
-  ⊢ 📄 [manuscript.qmd](/manuscript/manuscript.qmd)\
-  ⊢ 📄 [manuscript.pdf](/manuscript/manuscript.pdf)\
-📂 [R](/R) code for preparing data and conducting analysis, including\
-  ⊢ 📄 [00-download-c14-data.R](/R/00-download-c14-data.R) downloads actual 
-radiocarbon samples used in the Heaton and Price papers.\
-  ⊢ 📄 [00-download-intcal20.R](/R/00-download-intcal20.R) downloads the IntCal20
-radiocarbon calibration curve.\
-  ⊢ 📄 [00-evaluation-summary.R](/R/00-evaluation-summary.R) is for generating the 
-markdown list-table reported in the results\
-  ⊢ 📄 [01-analysis.qmd](/R/01-analysis.qmd) is the primary analysis\
-  ⊢ 📄 [02-tuning.qmd](/R/02-tuning.qmd) is for tuning hyperparameters in netc14\
-  ⊢ 📄 [03-timing.qmd](/R/03-timing.qmd) is crude benchmarks and\
-  ⊢ Many R scripts for defining R functions used in analysis.
+-  [\_extensions](/_extensions) has Quarto extension for compiling manuscript\
+-  [analysis](/analysis) code for preparing data and conducting analysis\
+-  [data](/data) contains all data required for analysis\
+-  [figures](/figures) contains all figures included in the paper\
+-  [manuscript](/manuscript) contains the pre-print\
+-  [R](/R) R functions used in analysis
 
 ## 💾 Data availability
 
@@ -87,17 +72,16 @@ install.packages(pkgs)
 
 # compile quarto documents
 library(quarto)
-quarto_render("R/01-analysis.qmd")
-quarto_render("R/02-tuning.qmd")
-quarto_render("R/03-timing.qmd")
+quarto_render("analysis/analysis.qmd")
+quarto_render("analysis/tuning.qmd")
+quarto_render("analysis/timing.qmd")
 quarto_render("manuscript/manuscript.qmd")
 ```
 
 Note: if you are installing the torch package for the first time, you will need 
 to call `library(torch)` before rendering the quarto documents. It will walk you
-through additional installation requirements. Also, the file numbering is not 
-the order of the workflow, but of priority - 01-analysis is the most important 
-document for understanding the methods described in the manuscript.
+through additional installation requirements. Also, analysis.qmd is the most 
+important document for understanding the methods described in the manuscript.
 
 ## 🤖 AI statement
 
