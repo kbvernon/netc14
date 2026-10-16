@@ -99,8 +99,8 @@ dev.off()
 ![](/figures/example-densities.svg){width=75%}
 :::
 
-Note: the above figure is pretty noisy, so we show confidence intervals only for
-the DPMM and NetC14.
+Note: the above figure is pretty noisy, so we show uncertainty intervals only 
+for DPMM and NetC14.
 
 **Estimate age**
 
@@ -109,42 +109,44 @@ multiplying the chronology across each row of the calibration matrix and then
 dividing each row by its sum:
 
 $$
-\begin{aligned}
-p(t \mid F_{i}, \theta) &= \frac{p(F_{i} \mid t) \hspace{2pt} p(t \mid \theta)}{p(F_{i} \mid \theta)} \\
-\mathbf{q} &= \mathrm{diag}(\mathbf{h})^{-1} \mathbf{M} \hspace{2pt} \mathrm{diag}(\mathbf{v})
-\end{aligned}
+p(t \mid F_{i}, \theta) = \frac{p(F_{i} \mid t) \hspace{2pt} p(t \mid \theta)}{p(F_{i} \mid \theta)}
 $$
 
 In matrix form, that is
 
 $$
-\mathbf{q} = \mathrm{diag}(\mathbf{h})^{-1} \mathbf{M} \hspace{2pt} \mathrm{diag}(\mathbf{v})
+\mathbf{Q} = \mathrm{diag}(\mathbf{h})^{-1} \mathbf{M} \hspace{2pt} \mathrm{diag}(\mathbf{v})
 $$
 
-and in R (at least one very fast way to do this with recycling) is
+The resulting matrix $\mathbf{Q}$ has the same dimensions as $\mathbf{M}$. 
+Getting a scalar estimate of age for each radiocarbon sample just requires 
+drawing an age from each row of $\mathbf{Q}$.
 
-In words, we multiply each row of the matrix $\mathbf{M}$ element-wise by the
-global density $\mathbf{v} \approx p(t \mid \theta)$, and then normalize that
-quantity by dividing each element by the row sum $\text{h}_{i}(\theta)$, the
-mixture likelihood of that sample - in effect, concentrating the posterior
-probability mass of each sample around the modes of the mixture model, as shown
-in @fig-example-age. The resulting matrix $\mathbf{q}$ has the same dimensions
-as $\mathbf{M}$. Getting a scalar estimate of age for each radiocarbon sample
-just requires drawing an age from each row of $\mathbf{q}$ using a method like
-inverse transform sampling (called *quantiles* in R), which for row $i$ is
-roughly equivalent to `sample(t, size = 1, prob = q[i,])` in R.
+Scalar age estimates are then drawn from each row of $\mathbf{Q}$:
+
+$$
+\begin{aligned}
+\hat{t}_{i} &\sim p(t \mid F_{i}, \,\theta) \\[6px]
+\hat{t}_{i} &\sim \mathrm{Categorical}(\mathbf{Q}_{i})
+\end{aligned}
+$$
+
+In R: 
 
 ```{r}
 #| label: example-posterior
-
 v <- densities[["netc"]][["density"]]
 q <- t(t(calibrated_dates) * v)
 q <- q / rowSums(q)
+
+i <- 1
+t_hat <- sample(years, size = 1, prob = q[i, ])
 ```
 
-The figure below demonstrates this. The blue line shows the calibration
-likelihood of a sample, the red dashed line shows the prior, i.e., the
-chronology or density estimated by the mixture, and the black line shows the
+Sampling in this way pulls the probability mass of the sample towards the modes
+of mixture density. The figure below demonstrates this. The blue line shows the 
+calibration likelihood of a sample, the red dashed line shows the prior, i.e., 
+the chronology or density estimated by the mixture, and the black line shows the
 posterior, or the product of the likelihood and the prior. The crucial result is
 to concentrate the probability mass at the nearest mode in the density, which is
 presumably where the sample comes from.
@@ -244,12 +246,3 @@ dev.off()
 ::: {#example-age}
 ![](/figures/example-age.svg){width=75%}
 :::
-
-Scalar age estimates are then drawn from each row of $\mathbf{q}$:
-
-$$
-\begin{aligned}
-\hat{t}_{i} &\sim p(t \mid F_{i}, \,\theta) \\
-\hat{t}_{i} &\sim \mathrm{Categorical}(\mathbf{q}_{i})
-\end{aligned}
-$$
