@@ -19,9 +19,9 @@ This repository contains code and figures for our paper:
 **Preprint**: [manuscript.pdf](/manuscript/manuscript.pdf)
 
 **Supplement**:\
-[analysis.html](https://kbvernon.github.io/netc14/analysis/analysis.html)\
-[tuning.html](https://kbvernon.github.io/netc14/analysis/tuning.html)\
-[timing.html](https://kbvernon.github.io/netc14/analysis/timing.html)
+[analysis.html](/analysis/analysis.html)\
+[tuning.html](/analysis/tuning.html)\
+[timing.html](/analysis/timing.html)
 
 ## Contents
 
