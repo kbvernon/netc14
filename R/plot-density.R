@@ -48,8 +48,8 @@ plot.Density <- function(
     x_axis()
     y_axis()
 
-    x_title(xlab)
-    y_title(ylab)
+    x_label(xlab)
+    y_label(ylab)
 
     add_grid()
   }

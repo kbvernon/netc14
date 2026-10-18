@@ -21,6 +21,13 @@
 #' Calibration statistics (error in age estimates)
 #' - `mae`: mean absolute error, the mean of `|estimate - target|`.
 #' - `mse`: mean squared error, the mean of `(estimate - target)^2`.
+#' - `crps`: continuous ranked probability score, the mean over samples of
+#'   `E|X - y| - 0.5 * E|X - X'|`, where `X` and `X'` are draws in a row of
+#'   `estimate` and `y` is the matching `target`. The spread term
+#'   `0.5 * E|X - X'|` is computed from sorted draws.
+#' - `lp`: negative log predictive density, the mean over samples of
+#'   `-log p(y)`, where `estimate` is an `n x m` matrix of posterior
+#'   probabilities over years and `target` gives the column of each true age.
 #'
 #' @name metrics
 tvd <- function(estimate, target) {
@@ -45,4 +52,17 @@ mae <- function(estimate, target) {
 #' @rdname metrics
 mse <- function(estimate, target) {
   mean((estimate - target)^2)
+}
+
+#' @rdname metrics
+crps <- function(estimate, target) {
+  m <- ncol(estimate)
+  draws <- t(apply(estimate, 1, sort))
+  spread <- draws %*% (2 * seq_len(m) - m - 1) / m^2
+  mean(rowMeans(abs(estimate - target)) - spread)
+}
+
+#' @rdname metrics
+lp <- function(estimate, target) {
+  -mean(log(estimate[cbind(seq_along(target), target)] + EPS))
 }

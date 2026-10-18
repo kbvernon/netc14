@@ -48,12 +48,12 @@ plot.Calibration <- function(
 
   if (!is.null(xlab)) {
     x_axis()
-    x_title(xlab)
+    x_label(xlab)
   }
 
   if (!is.null(ylab)) {
     y_axis()
-    y_title(ylab, line = 2.5)
+    y_label(ylab, line = 2.5)
   }
 
   add_grid()
