@@ -40,11 +40,11 @@ y_axis <- function(lwd = 0, lwd.ticks = 0, las = 1, ...) {
 #' @param lab character scalar, the axis label
 #' @param line numeric scalar, the margin line to place the label on. Defaults
 #'   are 1.7 for the x-axis and 2.0 for the y-axis.
-x_title <- function(lab, line = 1.7, ...) {
+x_label <- function(lab, line = 1.7, ...) {
   title(xlab = lab, line = line, ...)
 }
 
-y_title <- function(lab, line = 2.0, ...) {
+y_label <- function(lab, line = 2.0, ...) {
   title(ylab = lab, line = line, ...)
 }
 
