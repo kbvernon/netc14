@@ -68,6 +68,8 @@ bgmm <- function(
   M <- torch::torch_tensor(M)
   grid <- torch::torch_tensor(years[i])
 
+  shape <- 1 / cv^2
+
   # select number of clusters by BIC at the posterior mode
   point_estimates <- (calibrated_dates / rowSums(calibrated_dates)) %*% years
   modes <- lapply(
@@ -79,12 +81,13 @@ bgmm <- function(
     start = start,
     end = end,
     alpha = alpha,
-    cv = cv
+    shape = shape
   )
-  best <- modes[[which.min(sapply(modes, `[[`, "bic"))]]
+  bics <- sapply(modes, bic, M = M, grid = grid, start = start, end = end)
+  best <- modes[[which.min(bics)]]
 
   # start sampling from the jittered mode
-  init <- best[["mode"]] + 0.1 * torch::torch_randn(3 * best[["k"]])
+  init <- best + 0.1 * torch::torch_randn(length(best))
 
   # do bayesian inference
   hmc <- hmc_script$sample(
@@ -96,8 +99,7 @@ bgmm <- function(
     torch::jit_scalar(as.integer(start)),
     torch::jit_scalar(as.integer(end - start)),
     torch::jit_scalar(alpha),
-    torch::jit_scalar(best[["shape"]]),
-    torch::jit_scalar(best[["rate"]]),
+    torch::jit_scalar(shape),
     torch::jit_scalar(EPS)
   )
 
@@ -112,7 +114,7 @@ bgmm <- function(
   structure(
     out,
     class = c("BGMM", class(out)),
-    n_clusters = best[["k"]],
+    n_clusters = length(best) / 3,
     n_iter = n_iter,
     n_samples = nrow(calibrated_dates),
     n_accept = hmc[[2]],
@@ -123,8 +125,8 @@ bgmm <- function(
   )
 }
 
-# initialize k cluster means at quantiles of the point estimates, optimize to
-# the posterior mode, and compute BIC from the mixture likelihood at the mode
+# initialize k cluster means at quantiles of the point estimates and optimize
+# to the posterior mode
 find_mode <- function(
   k,
   point_estimates,
@@ -133,20 +135,13 @@ find_mode <- function(
   start,
   end,
   alpha,
-  cv,
+  shape,
   n_steps = 500
 ) {
   means <- quantile(point_estimates, (seq_len(k) - 0.5) / k, names = FALSE)
   deltas <- diff(c(start, means)) / (end - means[k])
   errors <- rep((end - start + 1) / k, k)
   init <- log(c(rep(1, k), deltas, errors))
-
-  # adapt gamma parameters to time range and number of clusters
-  shape <- 1 / cv^2
-  rate <- shape / ((end - start + 1) / k)
-
-  start_ <- torch::jit_scalar(as.integer(start))
-  n_years_ <- torch::jit_scalar(as.integer(end - start))
 
   theta <- torch::torch_tensor(init, requires_grad = TRUE)
   optimizer <- torch::optim_adam(list(theta), lr = 0.05)
@@ -157,34 +152,30 @@ find_mode <- function(
       theta,
       M,
       grid,
-      start_,
-      n_years_,
+      torch::jit_scalar(as.integer(start)),
+      torch::jit_scalar(as.integer(end - start)),
       torch::jit_scalar(alpha),
       torch::jit_scalar(shape),
-      torch::jit_scalar(rate),
       torch::jit_scalar(EPS)
     )
     loss$backward()
     optimizer$step()
   }
 
+  theta$detach()
+}
+
+# bic from the mixture likelihood at theta
+bic <- function(theta, M, grid, start, end) {
   ll <- hmc_script$loglik(
     theta,
     M,
     grid,
-    start_,
-    n_years_,
+    torch::jit_scalar(as.integer(start)),
+    torch::jit_scalar(as.integer(end - start)),
     torch::jit_scalar(EPS)
   )$item()
-  n <- length(point_estimates)
-
-  list(
-    k = k,
-    mode = theta$detach(),
-    shape = shape,
-    rate = rate,
-    bic = -2 * ll + (3 * k - 1) * log(n)
-  )
+  -2 * ll + (length(theta) - 1) * log(nrow(M))
 }
 
 # torchscript: log posterior, gradient, leapfrog, and hmc sampler of bgmm
@@ -197,8 +188,11 @@ def exp_(x: float) -> float:
 def log_(x: float) -> float:
     return float(torch.log(torch.tensor(x)))
 
-def constrain(theta: Tensor, start: int,
-              n_years: int) -> Tuple[Tensor, Tensor, Tensor]:
+def constrain(
+    theta: Tensor,
+    start: int,
+    n_years: int
+) -> Tuple[Tensor, Tensor, Tensor]:
     p = torch.chunk(theta, 3, dim=-1)
     weights = torch.softmax(p[0], dim=-1)
     deltas = torch.exp(p[1])
@@ -210,8 +204,14 @@ def constrain(theta: Tensor, start: int,
 
     return weights, means, errors
 
-def loglik(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
-           eps: float) -> Tensor:
+def loglik(
+    theta: Tensor,
+    M: Tensor,
+    years: Tensor,
+    start: int,
+    n_years: int,
+    eps: float
+) -> Tensor:
     weights, means, errors = constrain(theta, start, n_years)
 
     Z =(years - means.unsqueeze(1)) / errors.unsqueeze(1)
@@ -221,14 +221,25 @@ def loglik(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
 
     return torch.log(torch.matmul(M, v) + eps).sum()
 
-def logp(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
-         alpha: float, shape: float, rate: float, eps: float) -> Tensor:
+def logp(
+    theta: Tensor,
+    M: Tensor,
+    years: Tensor,
+    start: int,
+    n_years: int,
+    alpha: float,
+    shape: float,
+    eps: float
+) -> Tensor:
     p = torch.chunk(theta, 3)
     logits = p[0]
     log_deltas = p[1]
     log_errors = p[2]
     deltas = torch.exp(log_deltas)
     errors = torch.exp(log_errors)
+
+    # gamma prior mean adapts to time range and number of clusters
+    rate = shape * log_errors.size(0) / (n_years + 1)
 
     ll = loglik(theta, M, years, start, n_years, eps)
     ld = (alpha * logits - torch.exp(logits)).sum()
@@ -237,23 +248,39 @@ def logp(theta: Tensor, M: Tensor, years: Tensor, start: int, n_years: int,
 
     return ll + ld + lg + jd
 
-def gradient(theta: Tensor, M: Tensor, years: Tensor, start: int,
-             n_years: int, alpha: float, shape: float, rate: float,
-             eps: float) -> Tuple[Tensor, Tensor]:
+def gradient(
+    theta: Tensor,
+    M: Tensor,
+    years: Tensor,
+    start: int,
+    n_years: int,
+    alpha: float,
+    shape: float,
+    eps: float
+) -> Tuple[Tensor, Tensor]:
     theta = theta.detach().requires_grad_(True)
-    lp = logp(theta, M, years, start, n_years, alpha, shape, rate, eps)
+    lp = logp(theta, M, years, start, n_years, alpha, shape, eps)
     g = torch.autograd.grad([lp], [theta])[0]
     assert g is not None
     return lp.detach(), g
 
-def sample(theta: Tensor, n_iter: int, n_jumps: int, M: Tensor, years: Tensor,
-           start: int, n_years: int, alpha: float, shape: float,
-           rate: float, eps: float) -> Tuple[Tensor, int, float]:
+def sample(
+    theta: Tensor,
+    n_iter: int,
+    n_jumps: int,
+    M: Tensor,
+    years: Tensor,
+    start: int,
+    n_years: int,
+    alpha: float,
+    shape: float,
+    eps: float
+) -> Tuple[Tensor, int, float]:
     n_par = theta.size(0)
     draws = torch.empty(n_iter, n_par)
     inv_mass = torch.eye(n_par)
     mass_factor = torch.eye(n_par)
-    lp, g = gradient(theta, M, years, start, n_years, alpha, shape, rate, eps)
+    lp, g = gradient(theta, M, years, start, n_years, alpha, shape, eps)
     n_accept = 0
 
     # dual averaging (Hoffman & Gelman 2014, algorithm 5)
@@ -277,8 +304,9 @@ def sample(theta: Tensor, n_iter: int, n_jumps: int, M: Tensor, years: Tensor,
         for s in range(n_jumps):
             momentum_new = momentum_new + 0.5 * step * g_new
             theta_new = theta_new + step * torch.mv(inv_mass, momentum_new)
-            lp_new, g_new = gradient(theta_new, M, years, start, n_years, alpha,
-                                     shape, rate, eps)
+            lp_new, g_new = gradient(
+                theta_new, M, years, start, n_years, alpha, shape, eps
+            )
             momentum_new = momentum_new + 0.5 * step * g_new
 
         # metropolis-hastings
@@ -317,7 +345,7 @@ def sample(theta: Tensor, n_iter: int, n_jumps: int, M: Tensor, years: Tensor,
             inv_mass = (n / (n + 5.0)) * S + 1e-3 * (5.0 / (n + 5.0)) * I
 
             # momentum ~ N(0, inv(inv_mass)) using the inverse cholesky factor
-            mass_factor = torch.inverse(torch.cholesky(inv_mass)).T
+            mass_factor = torch.inverse(torch.linalg_cholesky(inv_mass)).T
             u = log_(10 * step)
             h = 0.0
             e = 0.0
