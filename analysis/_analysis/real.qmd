@@ -4,7 +4,6 @@ The last (Tikal) comes from the Price paper.
 
 ```{r}
 #| label: radiocarbon-data
-
 radiocarbon <- read.csv("data/radiocarbon.csv")
 
 radiocarbon <- within(radiocarbon, {
@@ -23,8 +22,8 @@ class(radiocarbon) <- c("C14Samples", "data.frame")
 
 ```{r}
 #| label: radiocarbon-data-examples
+#| cache: true
 #| time_it: true
-
 datasets <- unique(radiocarbon[["dataset"]])
 results <- setNames(
   vector("list", length = length(datasets)),
@@ -72,7 +71,6 @@ for (ds in datasets) {
 #| label: plot-real-radiocarbon
 #| code-fold: true
 #| output: false
-
 for (i in seq_along(results)) {
   ds <- names(results)[i]
   densities <- results[[i]]
@@ -122,8 +120,8 @@ for (i in seq_along(results)) {
   x_axis()
   y_axis()
 
-  x_title("Years Before Present (t)")
-  y_title("Density", line = 2.5)
+  x_label("Years Before Present (t)")
+  y_label("Density", line = 2.5)
 
   add_grid()
 

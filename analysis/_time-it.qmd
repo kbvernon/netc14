@@ -1,7 +1,6 @@
 ```{r}
 #| label: time-code-chunks
 #| echo: false
-
 # we are deep into overkill territory here
 knitr::knit_hooks$set(
   time_it = local({

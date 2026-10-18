@@ -18,18 +18,39 @@ The steps are as follows:
 7. Evaluate models.
 
 These steps are repeated for each simulation. Currently, there are 3 (n_years)
-\* 3 (n_samples) \* 3 (n_clusters) \* 3 (distribution) = 81 starting conditions
-that are repeated 28 times each, resulting in 2268 unique simulations with
-randomization.
+$\times$ 3 (n_samples) $\times$ 3 (n_clusters) $\times$ 3 (distribution) = 81 
+starting conditions that are repeated 28 times each, resulting in 2268 unique 
+simulations with randomization.
 
 **Metrics**
+
+Calibration metrics compare age estimates $\hat{t}_{i}$, drawn from each
+sample's posterior given its calibrated date $F_{i}$, against true ages
+$t_{i}$ for $n$ samples. $\hat{t}_{i}'$ is an independent draw from the same
+posterior.
 
 $$
 \begin{aligned}
 \text{MAE} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left| [\hat{t}_{i} \mid F_{i}] - t_{i} \right| \\
-\text{TVD} &= 0.5 \sum_{j=1}^{m} \hspace{2pt} \left| v_{j} - \hat{v}_{j} \right|
+\text{MSE} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left( [\hat{t}_{i} \mid F_{i}] - t_{i} \right)^{2} \\
+\text{CRPS} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left| \hat{t}_{i} - t_{i} \right| - \frac{1}{2} \mathbb{E} \left| \hat{t}_{i} - \hat{t}_{i}' \right| \\
+\text{LP} &= -\frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \log p(t_{i} \mid F_{i}, \hat{v})
 \end{aligned}
 $$
+
+Summary metrics compare the estimated density $\hat{v}$ against the true
+density $v$ over $m$ years, where $V_{j}$ and $\hat{V}_{j}$ are their
+cumulative sums.
+
+$$
+\begin{aligned}
+\text{TVD} &= 0.5 \sum_{j=1}^{m} \hspace{2pt} \left| v_{j} - \hat{v}_{j} \right| \\
+\text{WD} &= \sum_{j=1}^{m} \hspace{2pt} \left| V_{j} - \hat{V}_{j} \right|
+\end{aligned}
+$$
+
+Only MAE (as recovery against the oracle) and TVD are reported in the paper.
+The other metrics are reported here as supplementary checks.
 
 ```{r}
 #| label: metrics
@@ -122,6 +143,13 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
   # evaluation
   years <- seq(start, end)
   true_ages <- samples[["cal_age"]]
+  true_years <- true_ages - start + 1
+
+  # plug-in posterior of each sample's age given a global density
+  posterior <- function(v) {
+    q <- t(t(calibrated_dates) * v)
+    q / rowSums(q)
+  }
 
   evaluations <- lapply(models, \(.model) {
     .density <- density(.model, years)[["density"]]
@@ -131,7 +159,9 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
       tvd = tvd(.density, chronology),
       wd = wd(.density, chronology),
       mae = mae(.ages, true_ages),
-      mse = mse(.ages, true_ages)
+      mse = mse(.ages, true_ages),
+      crps = crps(.ages, true_ages),
+      lp = lp(posterior(.density), true_years)
     )
   })
 
@@ -141,6 +171,8 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
   oracle_ages <- predict(chronology, calibrated_dates)
   mae_oracle <- mae(oracle_ages, true_ages)
   mse_oracle <- mse(oracle_ages, true_ages)
+  crps_oracle <- crps(oracle_ages, true_ages)
+  lp_oracle <- lp(posterior(unclass(chronology)), true_years)
 
   # collect and return
   e_clusters <- vapply(models, count_components, integer(1))
@@ -157,6 +189,8 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
     e_clusters = e_clusters,
     mae_oracle = mae_oracle,
     mse_oracle = mse_oracle,
+    crps_oracle = crps_oracle,
+    lp_oracle = lp_oracle,
     elapsed = elapsed
   )
 

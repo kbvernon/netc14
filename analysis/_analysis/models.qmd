@@ -9,21 +9,17 @@ $\mathbf{M}$, which means in effect row-normalizing the matrix.
 $$
 \mathbf{\tilde{M}} = \mathrm{diag}(\mathbf{M1})^{-1}\mathbf{M}
 $$
-In R:
-
-```r
-M_tilde <- M / rowSums(M)
-```
 
 Then we take the column means of that row-normalized matrix.
 
 $$
 \mathbf{\hat{v}} = \frac{1}{n}\mathbf{\tilde{M}}^{\top}\mathbf{1}
 $$
-In R:
+
+Both steps in R:
 
 ```r
-v <- colMeans(M_tilde)
+v <- colMeans(M / rowSums(M))
 ```
 
 ```{r}
@@ -68,18 +64,16 @@ ckde(calibrated_dates)
 
 ### Bayesian Gaussian Mixture Model
 
-This is roughly equivalent to the model proposed by Price et al (2021), but not
-exactly the same. There are three notable changes. First, to specify the
-number of mixture components, we find the posterior mode for different values
-of K and select the one that minimizes BIC, computed from the mixture
-likelihood at the mode. Second, we let the prior on the component standard
-deviations adapt to the number of years in the interval. And third, to sample the posterior
-distribution, we implement adaptive dual averaging Hamiltonian Monte Carlo in a
-torch module, rather than using Stan. During burn-in, the sampler estimates a
-dense mass matrix from the covariance of the draws, which accounts for the
-strong correlations between parameters of overlapping components. Because
-mixture posteriors are multimodal, sampling starts from the posterior mode of
-the selected model, slightly jittered, rather than from a random point.
+The model is described in the manuscript. Here we give implementation details.
+To select K, each candidate starts with equal weights, errors set to the mean
+of their prior, and means at evenly spaced quantiles of the samples' expected
+calendar ages, and is then optimized to its posterior mode with 500 steps of
+Adam. The sampler runs 4000 iterations by default, each proposal taking 12 
+leapfrog steps, and discards the first half as burn-in. During burn-in, the step 
+size is tuned by dual averaging toward 70% acceptance (Hoffman and Gelman 2014), 
+and a dense mass matrix is estimated from the covariance of draws between 1/8 
+and 3/8 of the iterations. Sampling starts from the mode of the selected K, 
+jittered by Gaussian noise with sd 0.1 on the unconstrained scale.
 
 ```{r}
 #| label: bgmm
@@ -165,19 +159,6 @@ will wander across clusters in proportion to their likelihood. The individual
 age estimates from each iteration are thus analogous to the mixture weighted
 posterior age estimation method described above.
 
-Gibbs sampling from these conditionals is implemented in performant C++ code in
-the R package `carbondate`. The default number of MCMC iterations is 100,000,
-but that proved impractical for the number of simulations given the resources of
-a typical desktop computer, so we limit sampling to 50,000 iterations. The final
-density estimate is the posterior predictive for the calendar age of a new
-sample, obtained by averaging over a subset $s$ of Gibbs iterations,
-$\hat{v} = 1/n_s \sum \hat{v}^{(s)}$, where each $\hat{v}^{(s)}$ is a mixture of
-the occupied clusters, weighted by $n_k/(n + \alpha_d)$, plus a new-cluster
-term, the Student-t above, weighted by $\alpha_d/(n + \alpha_d)$. Age estimates
-are retained as draws from the posterior age distribution
-$[\hat{t} \mid F, \theta]$ for each radiocarbon date, the per iteration sampled
-ages.
-
 ```{r}
 #| label: dpmm
 #| file: R/dpmm.R
@@ -200,40 +181,6 @@ NetC14 is a Gaussian Mixture Neural Network. To define that network, we first
 implement torch modules for the model's forward pass and custom loss. We then
 wrap these in a single model function that runs all the training logic,
 including back-propagation.
-
-
-The model forward pass is encapsulated in a module initialized with $K_{0} = \mathrm{min}(\mathrm{round}(\sqrt{m}), K_{max})$ 
-clusters, where $K_{max}$ is the maximum number of allowed clusters (35 by 
-default). Three length-$K_{0}$ vectors hold the log-transformed mixture 
-parameters, with means initially spaced evenly across the interval. To construct
-the mixture distribution, parameters must be transformed to satisfy certain 
-constraints, including the same ordering constraint placed on means by the BGMM. 
-The logits of the errors are exponentiated, ensuring that they are positive, and 
-SparseMax is applied to the logits of the weights with a temperature $\pi$ 
-controlling how aggressively the activation zeroes them out. The activation 
-works by centering the logits around a threshold and then applying the rectified 
-linear unit (ReLU) activation, with the threshold determined so that positive 
-centered logits sum to one and the rest are set to zero 
-(Martins and Astudillo 2016). Pruning components in this way rather than adding 
-them satisfies the requirement imposed by neural networks that the dimensions of 
-the data be known in advance. 
-
-At initialization, the forward pass module embeds the Gaussian noise parameter 
-$\xi$, the temperature $\pi$, and the counts of samples $n$ and years $m$. It 
-then constructs the mixture distribution and evaluates the mixture over the 
-annually-resolved grid interval $[t_{min}, t_{max}]$, returning an estimate of 
-the density $\mathbf{\hat{v}}$. Tuning for the hyperparameters $\gamma$ and 
-$\pi$ was done through a simple grid search over a range of values using the 
-evaluation method described in the next section, resulting in default values
-$\pi = 1.75$ and $\gamma = 2.5$. The model is trained over 512 epochs using the
-Adam optimizer with a learning rate of 0.005 (Kingma and Ba 2017). Density estimates
-$\mathbf{\hat{v}}$ are obtained by setting the model to training mode and
-running multiple forward passes, generating unique estimates
-$\mathbf{\hat{v}}^{(s)}$ with Gaussian noise that are then averaged,
-$\mathbf{\hat{v}} = 1/n_{s} \sum \mathbf{\hat{v}}^{(s)}$, with the potential,
-loosely speaking, to calculate confidence intervals, though they are not 
-strictly probabilistic. Posterior age estimation is conducted in the manner 
-described above.
 
 ```{r}
 #| label: netc14

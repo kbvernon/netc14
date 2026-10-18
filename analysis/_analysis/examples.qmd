@@ -2,6 +2,7 @@ Here is a complete example of a single simulation.
 
 ```{r}
 #| label: example
+#| cache: true
 #| time_it: true
 set.seed(STARTREK)
 
@@ -67,8 +68,8 @@ with(
 x_axis()
 y_axis()
 
-x_title("Years Before Present (t)")
-y_title("Density", line = 2.5)
+x_label("Years Before Present (t)")
+y_label("Density", line = 2.5)
 
 add_grid()
 
@@ -208,8 +209,8 @@ new_plot(
 x_axis()
 y_axis()
 
-x_title("Years Before Present (t)")
-y_title("Density", line = 2.5)
+x_label("Years Before Present (t)")
+y_label("Density", line = 2.5)
 
 add_grid()
 
