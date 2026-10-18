@@ -29,6 +29,19 @@ estimate ages given calibration curve and measurement uncertainty? Because age
 estimates are sampled, Monte Carlo noise means a model can occasionally beat the
 oracle, giving negative values.
 
+**Summary**
+
+Median values across all simulations for each model.
+
+```{r}
+#| label: evaluation-summary
+aggregate(
+  cbind(tvd, wd, mae, mse, crps, lp, recovery, elapsed) ~ model,
+  FUN = \(x) round(median(x), 3),
+  data = evaluation_results
+)
+```
+
 **Number of Samples**
 
 Points are median values across simulations for each sample size.
@@ -77,8 +90,8 @@ for (mdl in unique(xy[["model"]])) {
 x_axis()
 y_axis()
 
-x_title("Summarizing [TVD]")
-y_title("Calibrating [MAE-Recovery]")
+x_label("Summarizing [TVD]")
+y_label("Calibrating [MAE-Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
@@ -162,8 +175,8 @@ for (mdl in unique(xy[["model"]])) {
 x_axis()
 y_axis()
 
-x_title("Summarizing [TVD]")
-y_title("Calibrating [MAE-Recovery]")
+x_label("Summarizing [TVD]")
+y_label("Calibrating [MAE-Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
@@ -248,8 +261,8 @@ for (mdl in unique(xy[["model"]])) {
 x_axis()
 y_axis()
 
-x_title("Summarizing [TVD]")
-y_title("Calibrating [MAE-Recovery]")
+x_label("Summarizing [TVD]")
+y_label("Calibrating [MAE-Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
