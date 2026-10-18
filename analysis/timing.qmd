@@ -200,8 +200,8 @@ for (mdl in unique(xy[["model"]])) {
 x_axis()
 y_axis()
 
-x_title("N SAMPLES")
-y_title("ELAPSED [s]")
+x_label("N SAMPLES")
+y_label("ELAPSED [s]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))

@@ -283,8 +283,8 @@ with(best, points(gamma, median, pch = 19, col = coolors("orange"), cex = 1.5))
 x_axis()
 y_axis()
 
-x_title("PRECISION PENALTY [γ]")
-y_title("HELD-OUT NLL [Δ]")
+x_label("PRECISION PENALTY [γ]")
+y_label("HELD-OUT NLL [Δ]")
 
 dev.off()
 ```
