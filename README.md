@@ -92,8 +92,8 @@ was used in five main ways:
    package), 
 2. to write roxygen documentation for all functions used in analysis or in 
    visualizing results, 
-3. to write an adaptive dual averaging Hamiltonian Monte Carlo sampler in a 
-   torch module (based on algorithm 5 in Hoffman and Gelman 2014), 
+3. to write an adaptive dual averaging Hamiltonian Monte Carlo sampler in 
+   TorchScript (based on algorithm 5 in Hoffman and Gelman 2014), 
 4. to write print methods for all S3 classes defined in the analysis, and 
 5. to make updates to code when one change in a specific file required changes 
    to multiple files. 
