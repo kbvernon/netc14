@@ -40,12 +40,19 @@ y_axis <- function(lwd = 0, lwd.ticks = 0, las = 1, ...) {
 #' @param lab character scalar, the axis label
 #' @param line numeric scalar, the margin line to place the label on. Defaults
 #'   are 1.7 for the x-axis and 2.0 for the y-axis.
+#' @param adj controls the justification of the titles (default 0).
+#' @param font integer scalar, font face of the main title, 1 for regular or 2
+#'   for bold (default 1).
 x_label <- function(lab, line = 1.7, ...) {
   title(xlab = lab, line = line, ...)
 }
 
 y_label <- function(lab, line = 2.0, ...) {
   title(ylab = lab, line = line, ...)
+}
+
+main <- function(lab, line = 0.5, adj = 0, font = 1, ...) {
+  title(main = lab, line = line, adj = adj, font.main = font, ...)
 }
 
 #' Add Grid
