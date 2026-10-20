@@ -73,20 +73,24 @@ intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
 
 The chronology grid crosses problem size, sample count, mixture complexity, and
 component distribution scenarios. Every value of $\gamma$ is evaluated against
-every chronological scenario.
+every chronological scenario. Note that $\gamma$ is multiplicative, so we use a
+log-spaced grid, so we are looking at something like the elasticity of NLL 
+relative to this hyperparameter.
 
 ```{r}
 #| label: tuning-grid
-gammas <- seq(1, 7, by = 0.5)
+gammas <- 2^seq(-2, 6, by = 0.5)
 
 evaluation_grid <- expand.grid(
-  n_years = c(500, 2500, 12500) - 1,
+  n_years = c(500, 2500, 12500),
   n_samples = c(50, 250, 1250),
   n_clusters = c(1, 3, 9),
   distribution = c("gaussian", "uniform", "skewed"),
+  replicate = seq_len(2),
   stringsAsFactors = FALSE
 )
 
+n_cores <- 12
 n_scenarios <- nrow(evaluation_grid)
 ```
 
@@ -103,7 +107,7 @@ all configurations.
 simulations <- vector("list", n_scenarios)
 
 for (i in seq_len(n_scenarios)) {
-  set.seed(STARGATE + i)
+  set.seed(STARGATE + (1000 * i))
 
   # scenario
   n_years <- evaluation_grid[["n_years"]][i]
@@ -111,7 +115,7 @@ for (i in seq_len(n_scenarios)) {
   n_samples <- evaluation_grid[["n_samples"]][i]
   distribution <- evaluation_grid[["distribution"]][i]
   start <- sample(seq(100, 49500 - n_years), 1)
-  end <- start + n_years
+  end <- start + n_years - 1
 
   # simulate chronology and draw samples
   chronology <- simulate_chronology(start, end, n_clusters, distribution)
@@ -132,16 +136,24 @@ for (i in seq_len(n_scenarios)) {
 }
 
 simulations <- do.call(c, simulations)
+cost <- with(evaluation_grid, rep(n_samples * n_years, each = length(gammas)))
+
+simulations <- split(
+  simulations[order(cost)],
+  rep_len(seq_len(n_cores), length(simulations))
+)
 ```
 
-The configuration sweep only has to fit NetC14 and evaluate against each hold 
-out.
+The configuration sweep only has to fit NetC14 and evaluate against each hold
+out. Configurations are sorted by the size of the measurement matrix and dealt
+out to cores in turn, so all cores carry the same workload.
 
 ```{r}
 #| label: tuning-loop
+#| cache: true
 #| output: false
 #| time_it: true
-clusters <- makeCluster(14)
+clusters <- makeCluster(n_cores)
 
 fns <- c(
   "calibrate.R",
@@ -169,15 +181,14 @@ clusterEvalQ(clusters, {
   lapply(file.path("R", fns), source, verbose = FALSE)
 })
 
-tuning_results <- parLapplyLB(
-  clusters,
-  simulations,
-  \(scenario) {
+tuning_results <- parLapply(clusters, simulations, \(job) {
+  lapply(job, \(scenario) {
     gamma <- scenario[["gamma"]]
 
     calibrated_dates <- with(scenario, calibrate(samples, intcal20))
 
     heldout <- 0
+    n_active <- c()
 
     for (fold in scenario[["folds"]]) {
       training_dates <- structure(
@@ -189,20 +200,21 @@ tuning_results <- parLapplyLB(
       netc_cv <- netc(training_dates, gamma = gamma, pi = 1)
       ll <- logLik(netc_cv, calibrated_dates[fold, , drop = FALSE])
       heldout <- heldout + ll
+      n_active <- c(n_active, count_components(netc_cv))
     }
 
     data.frame(
       scenario = scenario[["id"]],
       start = scenario[["start"]],
       gamma = gamma,
-      nll = -sum(heldout) / nrow(calibrated_dates)
+      nll = -sum(heldout) / nrow(calibrated_dates),
+      n_active = mean(n_active)
     )
-  },
-  chunk.size = 1
-)
+  })
+})
 
 stopCluster(clusters)
-tuning_results <- do.call(rbind, tuning_results)
+tuning_results <- do.call(rbind, do.call(c, tuning_results))
 ```
 
 Combine results and save.
@@ -219,8 +231,10 @@ tuning_results <- tuning_results[c(
   "n_samples",
   "n_clusters",
   "distribution",
+  "replicate",
   "start",
-  "nll"
+  "nll",
+  "n_active"
 )]
 
 write.csv(
@@ -234,70 +248,204 @@ write.csv(
 
 Held-out NLL is normalized within each scenario as the difference from the best
 configuration for that scenario, so scenarios with different sample sizes and
-intervals are comparable.
+intervals are comparable. Model complexity is measured as the ratio of active
+to true components. We then choose $\gamma$ with the one-standard-error rule
+(Hastie et al. 2017, section 7.10): the largest $\gamma$ whose mean held-out NLL
+is no more than one standard error above the minimum.
 
 ```{r}
-#| label: aggregate-results
+#| label: tuning-summary
 tuning_results <- transform(
   tuning_results,
-  nll = nll - ave(nll, scenario, FUN = min)
+  nll = nll - ave(nll, scenario, FUN = min),
+  ratio = n_active / n_clusters
 )
 
-tuning_results <- aggregate(
+tuning <- aggregate(
+  cbind(nll, ratio) ~ gamma,
+  data = tuning_results,
+  FUN = mean
+)
+
+tuning[["se"]] <- aggregate(
   nll ~ gamma,
   data = tuning_results,
-  FUN = \(.x) quantile(.x, c(0.25, 0.5, 0.75))
+  FUN = \(x) sd(x) / sqrt(length(x))
+)[["nll"]]
+
+i <- which.min(tuning[["nll"]])
+threshold <- with(tuning, nll[i] + se[i])
+best <- tuning[max(which(tuning[["nll"]] <= threshold)), ]
+
+tuning[["threshold"]] <- threshold
+
+write.csv(
+  tuning,
+  file = "data/tuning-summary.csv",
+  row.names = FALSE
 )
-
-tuning_results <- do.call(data.frame, tuning_results)
-names(tuning_results) <- c("gamma", "lower", "median", "upper")
-
-best <- tuning_results[which.min(tuning_results[["median"]]), ]
 ```
 
 ```{r}
 #| label: visualize-tuning-results
 #| code-fold: true
 #| output: false
+x_ticks <- seq(-2, 6)
+x_labels <- 2^x_ticks
+xlim <- range(x_ticks)
+
+xy <- transform(tuning, x = log2(gamma))
+xy_best <- transform(best, x = log2(gamma))
+
 svglite(
   "figures/tuning-objectives.svg",
-  width = 5.5,
+  width = 7,
   height = 3
 )
 
-par(defaults)
-par(mai = c(0.6, 0.6, 0, 0))
+layout(matrix(1:2, nrow = 1))
 
-with(tuning_results, new_plot(range(gamma), range(lower, upper)))
-add_grid()
+par(defaults)
+par(mai = c(0.5, 0.6, 0.1, 0.1))
+
+with(xy, new_plot(xlim, range(nll - se, nll + se)))
+add_grid(v = x_ticks)
 
 with(
-  tuning_results,
-  segments(gamma, lower, gamma, upper, col = coolors("gray"))
+  xy,
+  polygon(
+    c(x, rev(x)),
+    c(nll - se, rev(nll + se)),
+    col = coolors("gray", shade = -0.8),
+    border = NA
+  )
 )
+abline(h = threshold, lty = "dashed", col = coolors("orange"))
 
-with(tuning_results, points(gamma, median, pch = 19, col = coolors("gray")))
+with(xy, lines(x, nll, col = coolors("gray")))
+with(xy, points(x, nll, pch = 19, col = coolors("gray")))
+with(xy_best, points(x, nll, pch = 19, col = coolors("orange"), cex = 1.5))
 
-with(best, points(gamma, median, pch = 19, col = coolors("orange"), cex = 1.5))
-
-x_axis()
+x_axis(at = x_ticks, labels = x_labels)
 y_axis()
 
-x_label("PRECISION PENALTY [γ]")
-y_label("HELD-OUT NLL [Δ]")
+x_label("Precision Penalty [γ]")
+y_label("Held-out NLL [Δ]", line = 2.4)
+
+with(xy, new_plot(xlim, range(1, ratio)))
+add_grid(v = x_ticks)
+
+abline(h = 1, lty = "dashed", col = coolors("gray"))
+
+with(xy, lines(x, ratio, col = coolors("gray")))
+with(xy, points(x, ratio, pch = 19, col = coolors("gray")))
+with(xy_best, points(x, ratio, pch = 19, col = coolors("orange"), cex = 1.5))
+
+x_axis(at = x_ticks, labels = x_labels)
+y_axis()
+
+x_label("Precision Penalty [γ]")
+y_label("Active / True Components", line = 2.4)
 
 dev.off()
 ```
 
 :::{#tuning-objectives}
-![](/figures/tuning-objectives.svg){width=75%}
+![](/figures/tuning-objectives.svg){width=95%}
+:::
+
+### Scenario summary
+
+The precision penalty should matter most where few samples are spread over a
+long interval, so we also break held-out NLL down by interval length and sample
+size.
+
+```{r}
+#| label: scenario-summary
+scenario_summary <- aggregate(
+  nll ~ gamma + n_years + n_samples,
+  data = tuning_results,
+  FUN = mean
+)
+```
+
+```{r}
+#| label: visualize-tuning-scenarios
+#| code-fold: true
+#| output: false
+n_samples <- c(50, 250, 1250)
+clrs <- coolors("yellow", "orange", "brown")
+
+ylim <- range(scenario_summary[["nll"]])
+
+widths <- c(2.05, 0.15, 1.65, 0.15, 1.65, 0.15, 0.7)
+
+svglite(
+  filename = "figures/tuning-scenarios.svg",
+  width = sum(widths),
+  height = 2.5,
+  pointsize = 10
+)
+
+layout(matrix(c(1, 0, 2, 0, 3, 0, 4), nrow = 1), widths = widths)
+
+par(defaults)
+
+for (yrs in unique(scenario_summary[["n_years"]])) {
+  xy_yrs <- scenario_summary[scenario_summary[["n_years"]] == yrs, ]
+
+  par(mai = c(0.4, if (yrs == 500) 0.4 else 0, 0.25, 0))
+  new_plot(xlim, ylim)
+  add_grid(v = x_ticks)
+
+  for (j in seq_along(n_samples)) {
+    i <- which(xy_yrs[["n_samples"]] == n_samples[j])
+    x <- log2(xy_yrs[["gamma"]][i])
+    y <- xy_yrs[["nll"]][i]
+
+    lines(x, y, col = clrs[j], lwd = 0.5)
+    points(x, y, pch = 21, col = clrs[j], bg = coolors("gray", shade = -0.9))
+  }
+
+  x_axis(at = x_ticks, labels = x_labels)
+
+  if (yrs == 2500) {
+    x_label("Precision Penalty [γ]")
+  }
+
+  if (yrs == 500) {
+    y_axis()
+    y_label("Held-out NLL [Δ]")
+  }
+
+  main(paste(yrs, "Years"), col = coolors("gray"))
+}
+
+par(mai = rep(0, 4))
+new_plot(c(0, 1), c(0, 1))
+add_legend(
+  x = 0.0,
+  y = 0.7,
+  legend = n_samples,
+  col = clrs,
+  text.col = clrs,
+  pch = 21,
+  pt.cex = 1.1,
+  lwd = 0.5,
+  title = "N Samples"
+)
+
+dev.off()
+```
+
+:::{#tuning-scenarios}
+![](/figures/tuning-scenarios.svg){width=95%}
 :::
 
 ### Optimal configuration
 
-The optimal $\gamma$ minimizes the median held-out NLL across scenarios. It is
-highlighted in orange in the figure above, with whiskers spanning the
-interquartile range.
+The selected $\gamma$ is highlighted in orange in the first figure above, with
+the one-standard-error threshold shown as a dashed line.
 
 ```{r}
 #| label: best-configuration

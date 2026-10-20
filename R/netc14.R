@@ -7,9 +7,9 @@
 #' @param max_clusters maximum number of Gaussian clusters to initialize
 #'   (default is 35)
 #' @param w_gauss weight for Gaussian noise applied to parameters (default 0.02)
-#' @param gamma weight for the precision penalty in the loss (default 1.5);
-#'   the penalty is `gamma * sqrt(n_samples) * sum(n_years / errors^2)`, so
-#'   larger values push components toward wider, lower-precision shapes
+#' @param gamma weight for the precision penalty in the loss (default 16);
+#'   the penalty is `gamma * n_years * sum(1 / errors^2)`, so larger values push
+#'   components toward wider, lower-precision shapes
 #' @param pi sparsemax temperature applied to mixture logits (default 1.0);
 #'   smaller values produce sparser weights
 #' @param n_epochs number of training epochs (default 512)
@@ -28,7 +28,7 @@ netc <- function(
   calibrated_dates,
   max_clusters = 35,
   w_gauss = 0.02,
-  gamma = 1.5,
+  gamma = 16,
   pi = 1.0,
   n_epochs = 512,
   learning_rate = 0.005,
