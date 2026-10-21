@@ -25,12 +25,20 @@ This repository contains code and figures for our paper:
 
 ## Contents
 
--  [\_extensions](/_extensions) has Quarto extension for compiling manuscript\
+-  [\_extensions](/_extensions) Quarto extension for compiling manuscript\
 -  [analysis](/analysis) code for preparing data and conducting analysis\
--  [data](/data) contains all data required for analysis\
--  [figures](/figures) contains all figures included in the paper\
--  [manuscript](/manuscript) contains the pre-print\
+-  [data](/data) all data required for analysis\
+-  [figures](/figures) all figures included in the paper\
+-  [manuscript](/manuscript) the pre-print\
 -  [R](/R) R functions used in analysis
+
+Root files for project configuration and workflow:  
+
+-  [workflow.R](workflow.R) runs the full analysis and renders manuscript\
+-  [justfile](justfile) useful recipes for interactive workflow in the terminal\
+-  [\_quarto.yml](_quarto.yml) Quarto project configuration\
+-  [panache.toml](panache.toml) panache configuration for formatting markdown\
+-  [renv.lock](renv.lock) R package versions for `renv::restore()`
 
 ## 💾 Data availability
 
@@ -57,9 +65,7 @@ manuscript.
 
 ## 📈 Replicate analysis
 
-Provided you have `data/intcal20.csv` and `data/radiocarbon.csv`, all R 
-dependencies can be installed, the entire analysis can be run, and the 
-manuscript can be compiled like this:
+First install dependencies:
 
 ```r
 # install dependencies with renv
@@ -69,19 +75,33 @@ renv::restore()
 # use this if you do not want to install renv
 pkgs <- readLines("dependencies.txt")
 install.packages(pkgs)
-
-# compile quarto documents
-library(quarto)
-quarto_render("analysis/analysis.qmd")
-quarto_render("analysis/tuning.qmd")
-quarto_render("analysis/timing.qmd")
-quarto_render("manuscript/manuscript.qmd")
 ```
 
-Note: if you are installing the torch package for the first time, you will need 
-to call `library(torch)` before rendering the quarto documents. It will walk you
-through additional installation requirements. Also, analysis.qmd is the most 
-important document for understanding the methods described in the manuscript.
+> [!NOTE]
+> If you are installing the torch package for the first time, you will need to
+> call `library(torch)` before running the workflow. It will walk you through
+> additional installation requirements.
+
+Now, provided you have `data/intcal20.csv` and `data/radiocarbon.csv`, the 
+entire analysis can be run and the manuscript can be compiled by calling:
+
+```r
+source("workflow.R")
+```
+
+If you prefer the terminal and have the just command-runner installed, you can 
+also run the whole workflow with
+
+```sh
+just run workflow.R
+```
+
+> [!NOTE]
+> `workflow.R` first checks that the default `gamma` used in `netc()` matches
+> the best result found in `tuning.qmd`. If they don't, the whole workflow will
+> abort with an error requesting that the default be updated in `R/netc14.R`. If 
+> you want to re-run the tuning loop, too, use `quarto_render("analysis/tuning.qmd")` 
+> in R or `just analyze tuning` in the terminal.
 
 ## 🤖 AI statement
 
