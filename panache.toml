@@ -1,0 +1,5 @@
+[format]
+line-ending = "lf"
+math-delimiter-style = "preserve"
+math = "verbatim"
+math-indent = 0
