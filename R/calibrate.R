@@ -46,6 +46,26 @@ calibrate_sample <- function(f14c_mu, f14c_sigma, calibration) {
   )
 }
 
+#' Subset CalGrid
+#'
+#' Row subsets keep the `CalGrid` class and its attributes. Column subsets
+#' return a plain matrix, since `start` and `end` no longer apply.
+#'
+#' @param x a matrix with class `CalGrid`
+#' @param i,j,...,drop arguments passed to the matrix method of `[`
+`[.CalGrid` <- function(x, i, j, ..., drop = TRUE) {
+  out <- unclass(x)[i, j, ..., drop = drop]
+  if (!missing(j) || !is.matrix(out)) {
+    return(out)
+  }
+  structure(
+    out,
+    class = class(x),
+    start = attr(x, "start"),
+    end = attr(x, "end")
+  )
+}
+
 #' Print CalGrid
 #'
 #' @param x a matrix with class `CalGrid`
