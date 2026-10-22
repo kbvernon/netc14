@@ -14,7 +14,7 @@ This repository contains code and figures for our paper:
 > [![](https://orcid.org/sites/default/files/images/orcid_16x16.png)](https://orcid.org/0000-0001-7977-8568),
 > and Simon Brewer
 > [![](https://orcid.org/sites/default/files/images/orcid_16x16.png)](https://orcid.org/0000-0002-6810-1911)
-> NetC14: A Gaussian Mixture Neural Network for Calibrating and Summarizing Radiocarbon Dates. 
+> NetC14: A Gaussian mixture neural network for calibrating and summarizing radiocarbon dates. 
 
 **Preprint**: [manuscript.pdf](/manuscript/manuscript.pdf)
 
