@@ -101,7 +101,8 @@ nn_carbon <- torch::nn_module(
 
     # initialize parameters
     logits <- torch::torch_ones(self$n_clusters)
-    self$zero <- start
+    self$start <- start
+    self$n_years <- end - start
 
     # we want the means or cluster locations to fall on the center of each
     # interval, so we add a half-spacing buffer to the start and end
@@ -111,14 +112,20 @@ nn_carbon <- torch::nn_module(
     spacings <- rep(spacing, n_clusters)
     spacings[1] <- buffer
 
-    # we apply the inverse of the softplus to the mean spacing
-    deltas <- torch::torch_tensor(spacings + log1p(-exp(-spacings)))
+    # log spacings relative to the gap between the last mean and the end
+    deltas <- torch::torch_tensor(log(spacings / buffer))
     errors <- torch::torch_full(self$n_clusters, log(buffer))
 
     # register parameters for updating
     self$logits <- torch::nn_parameter(logits)
     self$deltas <- torch::nn_parameter(deltas)
     self$errors <- torch::nn_parameter(errors)
+  },
+  bound_means = function(deltas) {
+    # ordered means bounded to [start, end], ordering enforces identifiability
+    deltas <- torch::torch_exp(deltas)
+    total <- 1 + deltas$sum()
+    self$start + self$n_years * torch::torch_cumsum(deltas, dim = 1) / total
   },
   mixture = function() {
     logits <- self$logits
@@ -132,11 +139,9 @@ nn_carbon <- torch::nn_module(
       errors <- errors + (self$w_gauss * torch::torch_randn_like(errors))
     }
 
-    spacing <- torch::nnf_softplus(deltas)
-
     # constrain to parameter space
     weights <- torch::nnf_contrib_sparsemax(logits / self$pi)
-    means <- torch::torch_cumsum(spacing, dim = 1) + self$zero
+    means <- self$bound_means(deltas)
     errors <- torch::torch_exp(errors)
 
     # save errors for regularization in the loss function
