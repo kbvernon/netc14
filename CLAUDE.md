@@ -19,17 +19,6 @@ Comparisons are also made to other algorithms, including
 Finally, models are compared against real world data, where the true density and 
 ages are unknown.
 
-## Structure
-
--   `_extensions/` - a Quarto extension for the manuscript
--   `.misc/` - random stuff not important enough to hold in a main directory
--   `.quarto/` - the mess of temp files that Quarto generates
--   `data/` - all data required for or derived from the analysis
--   `figures/` - all generated figures
--   `manuscript/` - files related to compiling `manuscript.qmd`
--   `R/` - all R scripts and Quarto documents required for compiling 
-    `01-analysis.qmd`, `02-tuning.qmd`, and `03-timing.qmd`.
-
 ## Project requirements
 
 -   A key constraint on the project is to minimize the number of R package 
