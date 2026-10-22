@@ -54,6 +54,9 @@ calibrate_sample <- function(f14c_mu, f14c_sigma, calibration) {
 #' @param x a matrix with class `CalGrid`
 #' @param i,j,...,drop arguments passed to the matrix method of `[`
 `[.CalGrid` <- function(x, i, j, ..., drop = TRUE) {
+  if ((nargs() - !missing(drop)) == 2) {
+    return(unclass(x)[i])
+  }
   out <- unclass(x)[i, j, ..., drop = drop]
   if (!missing(j) || !is.matrix(out)) {
     return(out)

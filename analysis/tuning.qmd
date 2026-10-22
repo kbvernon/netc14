@@ -61,15 +61,19 @@ lapply(file.path("R", fns), source, verbose = FALSE)
 
 ```{r}
 #| label: intcal20
+
 intcal20 <- structure(
   read.csv("data/intcal20.csv"),
   class = c("Calibration", "data.frame"),
   curve = "IntCal20"
 )
 
-intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
-intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+intcal20 <- intcal20 |>
+  transform(f14c_mu = exp(-c14_age / LIBBY)) |>
+  transform(f14c_sigma = f14c_mu * c14_error / LIBBY)
 ```
+
+## Tuning
 
 The chronology grid crosses problem size, sample count, mixture complexity, and
 component distribution scenarios. Every value of $\gamma$ is evaluated against
@@ -90,70 +94,19 @@ evaluation_grid <- expand.grid(
   stringsAsFactors = FALSE
 )
 
-n_cores <- 12
 n_scenarios <- nrow(evaluation_grid)
 ```
 
-## Tuning
-
-To make this loop as efficient as possible, we precompute the chronologies and
-draw samples from them. Each chronology is simulated **once** and reused across 
-all configurations. 
-
-```{r}
-#| label: simulation-loop
-#| output: false
-#| time_it: true
-simulations <- vector("list", n_scenarios)
-
-for (i in seq_len(n_scenarios)) {
-  set.seed(STARGATE + (1000 * i))
-
-  # scenario
-  n_years <- evaluation_grid[["n_years"]][i]
-  n_clusters <- evaluation_grid[["n_clusters"]][i]
-  n_samples <- evaluation_grid[["n_samples"]][i]
-  distribution <- evaluation_grid[["distribution"]][i]
-  start <- sample(seq(100, 49500 - n_years), 1)
-  end <- start + n_years - 1
-
-  # simulate chronology and draw samples
-  chronology <- simulate_chronology(start, end, n_clusters, distribution)
-  samples <- sample_dates(chronology, n_samples, intcal20)
-
-  # k-fold
-  folds <- split(seq_len(n_samples), sample(rep_len(1:5, n_samples)))
-
-  simulations[[i]] <- lapply(gammas, \(gamma) {
-    list(
-      id = i,
-      start = start,
-      gamma = gamma,
-      samples = samples,
-      folds = folds
-    )
-  })
-}
-
-simulations <- do.call(c, simulations)
-cost <- with(evaluation_grid, rep(n_samples * n_years, each = length(gammas)))
-
-simulations <- split(
-  simulations[order(cost)],
-  rep_len(seq_len(n_cores), length(simulations))
-)
-```
-
-The configuration sweep only has to fit NetC14 and evaluate against each hold
-out. Configurations are sorted by the size of the measurement matrix and dealt
-out to cores in turn, so all cores carry the same workload.
+Each worker process runs one scenario at a time: it simulates the chronology,
+draws and calibrates samples, splits them into folds, and then sweeps every
+value of $\gamma$ against those same folds.
 
 ```{r}
 #| label: tuning-loop
 #| cache: true
 #| output: false
 #| time_it: true
-clusters <- makeCluster(n_cores)
+clusters <- makeCluster(12)
 
 fns <- c(
   "calibrate.R",
@@ -168,10 +121,7 @@ fns <- c(
 
 clusterExport(
   clusters,
-  varlist = c(
-    "fns",
-    "intcal20"
-  ),
+  varlist = c("fns", "intcal20", "gammas", "evaluation_grid"),
   envir = environment()
 )
 
@@ -181,62 +131,60 @@ clusterEvalQ(clusters, {
   lapply(file.path("R", fns), source, verbose = FALSE)
 })
 
-tuning_results <- parLapply(clusters, simulations, \(job) {
-  lapply(job, \(scenario) {
-    gamma <- scenario[["gamma"]]
+# run simulations in parallel, one scenario at a time
+tuning_results <- parLapplyLB(clusters, seq_len(n_scenarios), \(i) {
+  set.seed(STARGATE + (1000 * i))
 
-    calibrated_dates <- with(scenario, calibrate(samples, intcal20))
+  # scenario
+  n_years <- evaluation_grid[["n_years"]][i]
+  n_clusters <- evaluation_grid[["n_clusters"]][i]
+  n_samples <- evaluation_grid[["n_samples"]][i]
+  distribution <- evaluation_grid[["distribution"]][i]
+  start <- sample(seq(100, 49500 - n_years), 1)
+  end <- start + n_years - 1
 
+  # simulate chronology, draw samples, and calibrate
+  chronology <- simulate_chronology(start, end, n_clusters, distribution)
+  samples <- sample_dates(chronology, n_samples, intcal20)
+  calibrated_dates <- calibrate(samples, intcal20)
+
+  # k-fold
+  folds <- split(seq_len(n_samples), sample(rep_len(1:5, n_samples)))
+  results <- vector("list", length(gammas))
+
+  for (k in seq_along(gammas)) {
     heldout <- 0
     n_active <- c()
 
-    for (fold in scenario[["folds"]]) {
-      training_dates <- structure(
-        calibrated_dates[-fold, ],
-        class = class(calibrated_dates),
-        start = attr(calibrated_dates, "start"),
-        end = attr(calibrated_dates, "end")
-      )
-      netc_cv <- netc(training_dates, gamma = gamma, pi = 1)
-      ll <- logLik(netc_cv, calibrated_dates[fold, , drop = FALSE])
+    for (fold in folds) {
+      mdl <- netc(calibrated_dates[-fold, ], gamma = gammas[k], pi = 1)
+      ll <- logLik(mdl, calibrated_dates[fold, , drop = FALSE])
       heldout <- heldout + ll
-      n_active <- c(n_active, count_components(netc_cv))
+      n_active <- c(n_active, count_components(mdl))
     }
 
-    data.frame(
-      scenario = scenario[["id"]],
-      start = scenario[["start"]],
-      gamma = gamma,
-      nll = -sum(heldout) / nrow(calibrated_dates),
+    results[[k]] <- cbind(
+      scenario = i,
+      gamma = gammas[k],
+      evaluation_grid[i, ],
+      start = start,
+      nll = -sum(heldout) / n_samples,
       n_active = mean(n_active)
     )
-  })
+  }
+
+  do.call(rbind, results)
 })
 
+# close parallel processes and collect results
 stopCluster(clusters)
-tuning_results <- do.call(rbind, do.call(c, tuning_results))
+tuning_results <- do.call(rbind, tuning_results)
 ```
 
-Combine results and save.
+Save results.
 
 ```{r}
 #| label: save-results
-evaluation_grid[["scenario"]] <- seq_len(n_scenarios)
-tuning_results <- merge(tuning_results, evaluation_grid, all.x = TRUE)
-
-tuning_results <- tuning_results[c(
-  "scenario",
-  "gamma",
-  "n_years",
-  "n_samples",
-  "n_clusters",
-  "distribution",
-  "replicate",
-  "start",
-  "nll",
-  "n_active"
-)]
-
 write.csv(
   tuning_results,
   file = "data/tuning-results.csv",

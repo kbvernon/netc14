@@ -14,8 +14,10 @@ intcal20 <- structure(
   curve = "IntCal20"
 )
 
-intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
-intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+intcal20 <- intcal20 |>
+  transform(f14c_mu = exp(-c14_age / LIBBY)) |>
+  transform(f14c_sigma = f14c_mu * c14_error / LIBBY)
+
 intcal20
 ```
 

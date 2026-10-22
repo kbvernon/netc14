@@ -4,9 +4,7 @@ date: today
 published-title: "COMPILED"
 ---
 
-```{=html}
-<style>p:has(img) { text-align: center; }</style>
-```
+{{< include _time-it.qmd >}}
 
 ## Introduction
 
@@ -16,7 +14,11 @@ sample sizes.
 **Data:** For model evaluation, data are simulated according to the generative
 model.
 
-**Method:** Models are timed during training.
+**Method:** Models are timed during training on chronologies with six Gaussian
+clusters, crossing interval length (500, 2500, and 12500 years) with sample size
+(500 to 5000), with 8 replicates per combination. Simulations run in parallel
+with one torch thread per process, so absolute times reflect single-threaded
+performance.
 
 ## R Preamble
 
@@ -52,26 +54,43 @@ lapply(file.path("R", fns), source, verbose = FALSE)
 
 ```{r}
 #| label: intcal20
+
 intcal20 <- structure(
   read.csv("data/intcal20.csv"),
   class = c("Calibration", "data.frame"),
   curve = "IntCal20"
 )
 
-intcal20 <- transform(intcal20, f14c_mu = exp(-c14_age / LIBBY))
-intcal20 <- transform(intcal20, f14c_sigma = f14c_mu * c14_error / LIBBY)
+intcal20 <- intcal20 |>
+  transform(f14c_mu = exp(-c14_age / LIBBY)) |>
+  transform(f14c_sigma = f14c_mu * c14_error / LIBBY)
 ```
 
 ## Timing
 
 ```{r}
+#| label: timing-scenarios
+
+timing_grid <- expand.grid(
+  n_samples = seq(500, 5000, by = 1500),
+  n_years = c(500, 2500, 12500),
+  replicate = seq_len(8)
+)
+```
+
+We are still running in parallel, which is probably not best for benchmarks, but
+we these tests are not meant to be absolutely perfect anyway. But to keep thread
+contention to a minimum, we limit the number of parallel clusters to eight (half
+the number available on this machine).
+
+```{r}
 #| label: model-timing
+#| cache: true
 #| output: false
-n_samples <- rep(seq(500, 5000, by = 500), each = 28)
-n_iter <- length(n_samples)
+#| time_it: true
 
 # set up clusters
-clusters <- makeCluster(14)
+clusters <- makeCluster(8)
 
 fns <- c(
   "bgmm.R",
@@ -80,7 +99,6 @@ fns <- c(
   "constants.R",
   "dataframe-helpers.R",
   "dpmm.R",
-  "metrics.R",
   "mixture-helpers.R",
   "netc14.R",
   "sample-dates.R",
@@ -90,7 +108,7 @@ fns <- c(
 
 clusterExport(
   clusters,
-  varlist = c("fns", "intcal20", "n_samples"),
+  varlist = c("fns", "intcal20", "timing_grid"),
   envir = environment()
 )
 
@@ -101,19 +119,20 @@ clusterEvalQ(clusters, {
   lapply(file.path("R", fns), source)
 })
 
-# run simulations in parallel
-timing_results <- parLapply(clusters, seq_len(n_iter), \(i) {
-  set.seed(STARGATE + i)
+# run simulations in parallel, one scenario at a time
+timing_results <- parLapplyLB(clusters, seq_len(nrow(timing_grid)), \(iter) {
+  set.seed(STARGATE + iter)
 
   # scenario
-  n_years <- 3000
+  n_years <- timing_grid[["n_years"]][iter]
+  n_samples <- timing_grid[["n_samples"]][iter]
   n_clusters <- 6
   start <- sample(seq(100, 49500 - n_years), 1)
   end <- start + n_years - 1
 
   # simulate chronology, draw samples, and calibrate
   chronology <- simulate_chronology(start, end, n_clusters)
-  samples <- sample_dates(chronology, n_samples[i], intcal20)
+  samples <- sample_dates(chronology, n_samples, intcal20)
   calibrated_dates <- calibrate(samples, intcal20)
 
   # training
@@ -125,17 +144,15 @@ timing_results <- parLapply(clusters, seq_len(n_iter), \(i) {
     spd(calibrated_dates)
   )
 
-  # collect and return
-  elapsed <- sapply(models, attr, which = "elapsed")
-
   data.frame(
-    iter = i,
+    iter = iter,
+    replicate = timing_grid[["replicate"]][iter],
     model = c("CKDE", "BGMM", "DPMM", "NetC14", "SPD"),
     start = start,
     n_years = n_years,
-    n_samples = n_samples[i],
+    n_samples = n_samples,
     n_clusters = n_clusters,
-    elapsed = elapsed
+    elapsed = sapply(models, attr, which = "elapsed")
   )
 })
 
@@ -161,67 +178,85 @@ write.csv(
 #| label: plot-elapsed
 #| code-fold: true
 #| output: false
-svglite(
-  filename = "figures/evaluate-timing.svg",
-  width = 5.5,
-  height = 3
-)
-
 xy <- aggregate(
-  elapsed ~ model + n_samples,
+  elapsed ~ model + n_samples + n_years,
   FUN = median,
   data = timing_results
 )
 
 xlim <- range(xy[["n_samples"]])
-ylim <- range(xy[["elapsed"]])
+y_step <- 150
+ylim <- c(0, y_step * ceiling(max(xy[["elapsed"]]) / y_step))
 
-layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
+x_ticks <- seq(500, 5000, by = 1500)
+y_ticks <- seq(ylim[1], ylim[2], by = y_step)
+
+widths <- c(2.05, 0.15, 1.65, 0.15, 1.65, 0.15, 0.7)
+
+svglite(
+  filename = "figures/evaluate-timing.svg",
+  width = sum(widths),
+  height = 2.5,
+  pointsize = 10
+)
+
+layout(matrix(c(1, 0, 2, 0, 3, 0, 4), nrow = 1), widths = widths)
 
 par(defaults)
-par(mai = c(0.5, 0.5, 0, 0))
 
-new_plot(xlim, ylim)
-add_grid()
+for (yrs in unique(xy[["n_years"]])) {
+  xy_yrs <- xy[xy[["n_years"]] == yrs, ]
 
-for (mdl in unique(xy[["model"]])) {
-  i <- which(xy[["model"]] == mdl)
-  x <- xy[["n_samples"]][i]
-  y <- xy[["elapsed"]][i]
-  z <- xy[["n_samples"]][i]
+  par(mai = c(0.4, if (yrs == 500) 0.45 else 0, 0.25, 0))
+  new_plot(xlim, ylim)
+  add_grid(h = y_ticks, v = x_ticks)
 
-  clr <- theme(mdl)
-  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
+  for (mdl in unique(xy_yrs[["model"]])) {
+    i <- which(xy_yrs[["model"]] == mdl)
+    x <- xy_yrs[["n_samples"]][i]
+    y <- xy_yrs[["elapsed"]][i]
 
-  lines(x, y, col = clr, lwd = 0.5)
-  points(x, y, pch = 21, col = clr, bg = cbg, cex = 1)
+    clr <- theme(mdl)
+    cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
+
+    lines(x, y, col = clr, lwd = 0.5)
+    points(x, y, pch = 21, col = clr, bg = cbg, cex = 1)
+  }
+
+  x_axis(at = x_ticks)
+
+  if (yrs == 2500) {
+    x_label("N Samples")
+  }
+
+  if (yrs == 500) {
+    y_axis(at = y_ticks)
+    y_label("Elapsed [s]")
+  }
+
+  main(paste(yrs, "Years"), col = coolors("gray"))
 }
-
-x_axis()
-y_axis()
-
-x_label("N SAMPLES")
-y_label("ELAPSED [s]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
 add_legend(
-  x = 0,
-  y = 0.8,
+  x = 0.0,
+  y = 0.7,
   legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
   pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
   col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
   text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
   pch = 21,
   pt.cex = 1.1,
-  lwd = 0.5
+  lwd = 0.5,
+  title = "Models"
 )
 
 dev.off()
 ```
 
 ::: {#evaluate-objectives-timing}
-![](/figures/evaluate-timing.svg){width=75%}
+![](/figures/evaluate-timing.svg){width=95%}
 :::
 
 ## Session Info

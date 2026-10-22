@@ -17,6 +17,6 @@ if (!isTRUE(all.equal(current_default, best))) {
 }
 
 # run analysis and benchmarks, then render manuscript with results
-quarto_render("analysis/analysis.qmd")
-quarto_render("analysis/timing.qmd")
+quarto_render("analysis/analysis.qmd", cache_refresh = TRUE)
+quarto_render("analysis/timing.qmd", cache_refresh = TRUE)
 quarto_render("manuscript/manuscript.qmd")

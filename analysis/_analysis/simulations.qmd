@@ -63,28 +63,33 @@ The other metrics are reported here as supplementary checks.
 **Simulations**
 
 ```{r}
-#| label: model-evaluation
-#| cache: true
-#| time_it: true
-#| output: false
-# define starting conditions for simulations
+#| label: evaluation-scenarios
+n_clusters <- 14
+
 evaluation_grid <- expand.grid(
   n_years = c(500, 2500, 12500),
   n_samples = c(50, 250, 1250),
   n_clusters = c(1, 3, 9),
   distribution = c("gaussian", "uniform", "skewed"),
+  replicate = seq_len(n_clusters * 2),
   stringsAsFactors = FALSE
 )
 
-# repeat each combination n times
-i <- rep(seq_len(nrow(evaluation_grid)), times = 28)
-evaluation_grid <- evaluation_grid[i, ]
-rownames(evaluation_grid) <- NULL
-
 n_iter <- nrow(evaluation_grid)
+```
+
+Each worker process runs one simulation at a time, picking up the next as soon
+as it finishes. Every simulation gets a unique index, which sets its random
+seed, so results do not depend on which worker runs it or when.
+
+```{r}
+#| label: model-evaluation
+#| cache: true
+#| time_it: true
+#| output: false
 
 # set up clusters
-clusters <- makeCluster(14)
+clusters <- makeCluster(n_clusters)
 
 fns <- c(
   "bgmm.R",
@@ -103,7 +108,7 @@ fns <- c(
 
 clusterExport(
   clusters,
-  varlist = c("fns", "evaluation_grid", "intcal20"),
+  varlist = c("fns", "intcal20", "evaluation_grid"),
   envir = environment()
 )
 
@@ -114,15 +119,15 @@ clusterEvalQ(clusters, {
   lapply(file.path("R", fns), source)
 })
 
-# run simulations in parallel
-evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
-  set.seed(STARTREK + i)
+# run simulations in parallel, one scenario at a time
+evaluation_results <- parLapplyLB(clusters, seq_len(n_iter), \(iter) {
+  set.seed(STARTREK + iter)
 
   # scenario
-  n_years <- evaluation_grid[["n_years"]][i]
-  n_clusters <- evaluation_grid[["n_clusters"]][i]
-  n_samples <- evaluation_grid[["n_samples"]][i]
-  distribution <- evaluation_grid[["distribution"]][i]
+  n_years <- evaluation_grid[["n_years"]][iter]
+  n_clusters <- evaluation_grid[["n_clusters"]][iter]
+  n_samples <- evaluation_grid[["n_samples"]][iter]
+  distribution <- evaluation_grid[["distribution"]][iter]
   start <- sample(seq(100, 49500 - n_years), 1)
   end <- start + n_years - 1
 
@@ -179,7 +184,7 @@ evaluation_results <- parLapply(clusters, seq_len(n_iter), \(i) {
   elapsed <- sapply(models, attr, which = "elapsed")
 
   sim <- data.frame(
-    iter = i,
+    iter = iter,
     model = c("CKDE", "BGMM", "DPMM", "NetC14", "SPD"),
     start = start,
     n_years = n_years,
