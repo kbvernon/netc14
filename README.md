@@ -18,26 +18,27 @@ This repository contains code and figures for our paper:
 
 **Preprint**: [manuscript.pdf](/manuscript/manuscript.pdf)
 
-**Supplement**:\
-[analysis.html](/analysis/analysis.html)\
-[tuning.html](/analysis/tuning.html)\
-[timing.html](/analysis/timing.html)
+**Supplement**:
+
+-  [analysis.html](/analysis/analysis.html)
+-  [tuning.html](/analysis/tuning.html)
+-  [timing.html](/analysis/timing.html)
 
 ## Contents
 
--  [\_extensions](/_extensions) Quarto extension for compiling manuscript\
--  [analysis](/analysis) code for preparing data and conducting analysis\
--  [data](/data) all data required for analysis\
--  [figures](/figures) all figures included in the paper\
--  [manuscript](/manuscript) the pre-print\
+-  [\_extensions](/_extensions) Quarto extension for compiling manuscript
+-  [analysis](/analysis) code for preparing data and conducting analysis
+-  [data](/data) all data required for analysis
+-  [figures](/figures) all figures included in the paper
+-  [manuscript](/manuscript) the pre-print
 -  [R](/R) R functions used in analysis
 
 Root files for project configuration and workflow:  
 
--  [workflow.R](workflow.R) runs the full analysis and renders manuscript\
--  [justfile](justfile) useful recipes for interactive workflow in the terminal\
--  [\_quarto.yml](_quarto.yml) Quarto project configuration\
--  [panache.toml](panache.toml) panache configuration for formatting markdown\
+-  [workflow.R](workflow.R) runs the full analysis and renders manuscript
+-  [justfile](justfile) useful recipes for interactive workflow in the terminal
+-  [\_quarto.yml](_quarto.yml) Quarto project configuration
+-  [panache.toml](panache.toml) panache configuration for formatting markdown
 -  [renv.lock](renv.lock) R package versions for `renv::restore()`
 
 ## 💾 Data availability
