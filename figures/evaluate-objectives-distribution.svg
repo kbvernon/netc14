@@ -33,42 +33,42 @@
   </clipPath>
 </defs>
 <g clip-path='url(#cpMzguNTl8Mjg4LjczfDIuNTl8MTc3LjQx)'>
-<line x1='38.59' y1='137.84' x2='288.73' y2='137.84' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
-<line x1='38.59' y1='88.94' x2='288.73' y2='88.94' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
-<line x1='38.59' y1='40.04' x2='288.73' y2='40.04' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
+<line x1='38.59' y1='138.03' x2='288.73' y2='138.03' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
+<line x1='38.59' y1='85.61' x2='288.73' y2='85.61' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
+<line x1='38.59' y1='33.18' x2='288.73' y2='33.18' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
 <line x1='62.95' y1='177.41' x2='62.95' y2='2.59' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
 <line x1='126.32' y1='177.41' x2='126.32' y2='2.59' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
 <line x1='189.70' y1='177.41' x2='189.70' y2='2.59' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
 <line x1='253.07' y1='177.41' x2='253.07' y2='2.59' style='stroke-width: 0.30; stroke: #999999; stroke-dasharray: 1.00,3.00;' />
-<polyline points='47.86,167.00 157.55,128.40 160.81,128.37 ' style='stroke-width: 0.38; stroke: #33261D;' />
-<circle cx='47.86' cy='167.00' r='3.16' style='stroke-width: 0.75; stroke: #33261D; fill: #ADA8A4;' />
-<polygon points='157.55,123.49 161.80,130.85 153.29,130.85 ' style='stroke-width: 0.75; stroke: #33261D; fill: #ADA8A4;' />
-<rect x='158.01' y='125.57' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #33261D; fill: #ADA8A4;' />
-<polyline points='211.60,121.86 279.47,75.87 278.23,84.32 ' style='stroke-width: 0.38; stroke: #DB9D47;' />
-<circle cx='211.60' cy='121.86' r='3.16' style='stroke-width: 0.75; stroke: #DB9D47; fill: #F0D7B5;' />
-<polygon points='279.47,70.96 283.72,78.32 275.21,78.32 ' style='stroke-width: 0.75; stroke: #DB9D47; fill: #F0D7B5;' />
-<rect x='275.43' y='81.52' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #DB9D47; fill: #F0D7B5;' />
-<polyline points='58.73,170.93 149.86,141.93 170.99,141.45 ' style='stroke-width: 0.38; stroke: #107E7D;' />
-<circle cx='58.73' cy='170.93' r='3.16' style='stroke-width: 0.75; stroke: #107E7D; fill: #9FCBCB;' />
-<polygon points='149.86,137.02 154.12,144.39 145.61,144.39 ' style='stroke-width: 0.75; stroke: #107E7D; fill: #9FCBCB;' />
-<rect x='168.19' y='138.66' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #107E7D; fill: #9FCBCB;' />
-<polyline points='70.13,164.58 144.60,134.66 139.91,131.99 ' style='stroke-width: 0.38; stroke: #BA3F1D;' />
-<circle cx='70.13' cy='164.58' r='3.16' style='stroke-width: 0.75; stroke: #BA3F1D; fill: #E3B2A4;' />
-<polygon points='144.60,129.75 148.86,137.12 140.35,137.12 ' style='stroke-width: 0.75; stroke: #BA3F1D; fill: #E3B2A4;' />
-<rect x='137.11' y='129.19' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #BA3F1D; fill: #E3B2A4;' />
-<polyline points='177.21,62.43 228.66,9.07 211.80,22.20 ' style='stroke-width: 0.38; stroke: #4D4D4D;' />
-<circle cx='177.21' cy='62.43' r='3.16' style='stroke-width: 0.75; stroke: #4D4D4D; fill: #FFFFFF;' />
+<polyline points='47.86,170.93 157.55,125.13 160.81,128.27 ' style='stroke-width: 0.38; stroke: #33261D;' />
+<circle cx='47.86' cy='170.93' r='3.16' style='stroke-width: 0.75; stroke: #33261D; fill: #ADA8A4;' />
+<polygon points='157.55,120.21 161.80,127.58 153.29,127.58 ' style='stroke-width: 0.75; stroke: #33261D; fill: #ADA8A4;' />
+<rect x='158.01' y='125.47' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #33261D; fill: #ADA8A4;' />
+<polyline points='211.60,110.22 279.47,65.69 278.23,74.44 ' style='stroke-width: 0.38; stroke: #DB9D47;' />
+<circle cx='211.60' cy='110.22' r='3.16' style='stroke-width: 0.75; stroke: #DB9D47; fill: #F0D7B5;' />
+<polygon points='279.47,60.78 283.72,68.15 275.21,68.15 ' style='stroke-width: 0.75; stroke: #DB9D47; fill: #F0D7B5;' />
+<rect x='275.43' y='71.64' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #DB9D47; fill: #F0D7B5;' />
+<polyline points='58.73,158.42 149.86,127.60 170.99,114.04 ' style='stroke-width: 0.38; stroke: #107E7D;' />
+<circle cx='58.73' cy='158.42' r='3.16' style='stroke-width: 0.75; stroke: #107E7D; fill: #9FCBCB;' />
+<polygon points='149.86,122.69 154.12,130.06 145.61,130.06 ' style='stroke-width: 0.75; stroke: #107E7D; fill: #9FCBCB;' />
+<rect x='168.19' y='111.24' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #107E7D; fill: #9FCBCB;' />
+<polyline points='62.27,163.07 137.55,130.40 132.11,129.78 ' style='stroke-width: 0.38; stroke: #BA3F1D;' />
+<circle cx='62.27' cy='163.07' r='3.16' style='stroke-width: 0.75; stroke: #BA3F1D; fill: #E3B2A4;' />
+<polygon points='137.55,125.49 141.80,132.86 133.29,132.86 ' style='stroke-width: 0.75; stroke: #BA3F1D; fill: #E3B2A4;' />
+<rect x='129.31' y='126.98' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #BA3F1D; fill: #E3B2A4;' />
+<polyline points='177.21,54.67 228.66,9.07 211.80,17.30 ' style='stroke-width: 0.38; stroke: #4D4D4D;' />
+<circle cx='177.21' cy='54.67' r='3.16' style='stroke-width: 0.75; stroke: #4D4D4D; fill: #FFFFFF;' />
 <polygon points='228.66,4.15 232.92,11.52 224.41,11.52 ' style='stroke-width: 0.75; stroke: #4D4D4D; fill: #FFFFFF;' />
-<rect x='209.00' y='19.40' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #4D4D4D; fill: #FFFFFF;' />
+<rect x='209.00' y='14.50' width='5.60' height='5.60' style='stroke-width: 0.75; stroke: #4D4D4D; fill: #FFFFFF;' />
 </g>
 <g clip-path='url(#cpMC4wMHwzNjAuMDB8MC4wMHwyMTYuMDA=)'>
 <text x='62.95' y='191.66' text-anchor='middle' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.15</text>
 <text x='126.32' y='191.66' text-anchor='middle' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.20</text>
 <text x='189.70' y='191.66' text-anchor='middle' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.25</text>
 <text x='253.07' y='191.66' text-anchor='middle' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.30</text>
-<text x='34.70' y='140.54' text-anchor='end' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.05</text>
-<text x='34.70' y='91.64' text-anchor='end' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.10</text>
-<text x='34.70' y='42.74' text-anchor='end' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.15</text>
+<text x='34.70' y='140.73' text-anchor='end' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.05</text>
+<text x='34.70' y='88.31' text-anchor='end' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.10</text>
+<text x='34.70' y='35.88' text-anchor='end' style='font-size: 7.56px;fill: #666666; font-family: "Arial";' textLength='14.70px' lengthAdjust='spacingAndGlyphs'>0.15</text>
 </g>
 <defs>
   <clipPath id='cpMi41OXwyODguNzN8Mi41OXwyMTMuNDE='>
@@ -77,7 +77,7 @@
 </defs>
 <g clip-path='url(#cpMi41OXwyODguNzN8Mi41OXwyMTMuNDE=)'>
 <text x='163.66' y='209.81' text-anchor='middle' style='font-size: 8.64px; font-family: "Arial";' textLength='74.77px' lengthAdjust='spacingAndGlyphs'>Summarizing [TVD]</text>
-<text transform='translate(10.08,90.00) rotate(-90)' text-anchor='middle' style='font-size: 8.64px; font-family: "Arial";' textLength='106.42px' lengthAdjust='spacingAndGlyphs'>Calibrating [MAE-Recovery]</text>
+<text transform='translate(10.08,90.00) rotate(-90)' text-anchor='middle' style='font-size: 8.64px; font-family: "Arial";' textLength='84.86px' lengthAdjust='spacingAndGlyphs'>Calibrating [Recovery]</text>
 </g>
 <defs>
   <clipPath id='cpMjkxLjYwfDM1Ny40MXwyLjU5fDIxMy40MQ=='>

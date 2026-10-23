@@ -49,7 +49,7 @@ $$
 \end{aligned}
 $$
 
-Only MAE (as recovery against the oracle) and TVD are reported in the paper.
+Only CRPS (as recovery against the oracle) and TVD are reported in the paper.
 The other metrics are reported here as supplementary checks.
 
 ```{r}

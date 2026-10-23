@@ -2,7 +2,7 @@
 #| label: prepare-results
 evaluation_results <- transform(
   evaluation_results,
-  recovery = (mae - mae_oracle) / mae_oracle
+  recovery = (crps - crps_oracle) / crps_oracle
 )
 ```
 
@@ -13,8 +13,10 @@ especially for mixture models where there is non-identifiability. The x-axis
 measures how well a model does at *summarizing* dates (at estimating the true
 density). TVD refers to "Total Variation Distance", which measures distance
 between two probability distributions. The y-axis measures how well a model does
-at *calibrating* dates (at estimating the true age of each sample). MAE is L1
-loss or "Mean Absolute Error".
+at *calibrating* dates (at estimating the true age of each sample). CRPS is the
+"Continuous Ranked Probability Score", which is like the mean absolute error of
+the posterior age draws, but with a penalty for overconfidence, so a model
+cannot improve its score by making its posteriors narrower.
 
 Recovery refers to the proportional excess error in calibration over an
 "oracle" model that knows the true age distribution or chronology.
@@ -25,19 +27,20 @@ $$
 
 The idea behind recovery is to establish a baseline for model performance, like
 even if you knew the true density, how much error would remain in trying to
-estimate ages given calibration curve and measurement uncertainty? Because age
-estimates are sampled, Monte Carlo noise means a model can occasionally beat the
-oracle, giving negative values.
+estimate ages given calibration curve and measurement uncertainty? Because CRPS
+is a proper scoring rule, the oracle is optimal in expectation, so recovery
+should be non-negative on average, though sampling noise means a model can
+occasionally beat the oracle in a single simulation.
 
 **Summary**
 
-Median values across all simulations for each model.
+Mean values across all simulations for each model.
 
 ```{r}
 #| label: evaluation-summary
 aggregate(
   cbind(tvd, wd, mae, mse, crps, lp, recovery, elapsed) ~ model,
-  FUN = \(x) round(median(x), 3),
+  FUN = \(x) round(mean(x), 3),
   data = evaluation_results
 )
 ```
@@ -91,7 +94,7 @@ x_axis()
 y_axis()
 
 x_label("Summarizing [TVD]")
-y_label("Calibrating [MAE-Recovery]")
+y_label("Calibrating [Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
@@ -176,7 +179,7 @@ x_axis()
 y_axis()
 
 x_label("Summarizing [TVD]")
-y_label("Calibrating [MAE-Recovery]")
+y_label("Calibrating [Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
@@ -262,7 +265,7 @@ x_axis()
 y_axis()
 
 x_label("Summarizing [TVD]")
-y_label("Calibrating [MAE-Recovery]")
+y_label("Calibrating [Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
