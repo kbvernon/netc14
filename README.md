@@ -65,7 +65,7 @@ The first three (Raths, Iron, and Paleo) are used in the Heaton paper, the last
 in Price. For reasons of space, only Iron and Paleo currently appear in the 
 manuscript.
 
-## 📈 Replicate analysis
+## 📈 Reproduce analysis
 
 First install dependencies:
 
