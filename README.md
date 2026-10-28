@@ -43,8 +43,9 @@ Root files for project configuration and workflow:
 
 ## 💾 Data availability
 
-All data for the analysis are fully available for replication. Most of the data 
-are simulated, but there are two real datasets required for the analysis:
+All data for the analysis are fully available for reproducing results. Most of 
+the data are simulated, but there are two real datasets required for the 
+analysis:
 
 -  `data/intcal20.csv` stores the radiocarbon calibration curve for the Northern
    Hemisphere.
