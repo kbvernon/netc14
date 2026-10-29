@@ -31,10 +31,20 @@ posterior.
 
 $$
 \begin{aligned}
-\text{MAE} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left| [\hat{t}_{i} \mid F_{i}] - t_{i} \right| \\
-\text{MSE} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left( [\hat{t}_{i} \mid F_{i}] - t_{i} \right)^{2} \\
-\text{CRPS} &= \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} \left| \hat{t}_{i} - t_{i} \right| - \frac{1}{2} \mathbb{E} \left| \hat{t}_{i} - \hat{t}_{i}' \right| \\
-\text{LP} &= -\frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \log p(t_{i} \mid F_{i}, \hat{v})
+\text{MAE} &= 
+  \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} 
+    \mathbb{E} \left| [\hat{t}_{i} \mid F_{i}] - t_{i} \right| \\
+\text{MSE} &= 
+  \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} \mathbb{E} 
+    \left( [\hat{t}_{i} \mid F_{i}] - t_{i} \right)^{2} \\
+\text{CRPS} &= 
+  \frac{1}{n} \sum_{i=1}^{n} \hspace{2pt}\left[\hspace{2pt} 
+    \mathbb{E} \left| \hat{t}_{i} - t_{i} \right| - 
+    \frac{1}{2} \mathbb{E} \left| \hat{t}_{i} - \hat{t}_{i}' \right| 
+  \hspace{2pt}\right] \\
+\text{LP} &= 
+  -\frac{1}{n} \sum_{i=1}^{n} \hspace{2pt} 
+    \log p(t_{i} \mid F_{i}, \hat{v})
 \end{aligned}
 $$
 
