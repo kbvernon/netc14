@@ -66,7 +66,7 @@ sample_dates <- function(chronology, n_samples, calibration) {
 inv_transform_sample <- function(probs, years, n) {
   cdf <- cumsum(probs)
   p <- runif(n)
-  i <- findInterval(p, cdf, all.inside = TRUE)
+  i <- findInterval(p, cdf) + 1
   sort(years[i])
 }
 
