@@ -65,16 +65,15 @@ density.DPMM <- function(x, years, ...) {
 }
 
 #' @rdname predict
-#' @details For DPMM, extracts each date's posterior calendar age samples
-#'   after burn-in, so the number of draws is fixed by the sampler rather than
-#'   `n_draws`.
-predict.DPMM <- function(object, calibrated_dates, ...) {
+#' @details For DPMM, extracts `n_draws` evenly spaced posterior calendar age
+#'   samples for each date after burn-in.
+predict.DPMM <- function(object, calibrated_dates, n_draws = 1000, ...) {
   n_iter <- attr(object, "n_iter")
   n_thin <- attr(object, "n_thin")
   n_burn <- floor(n_iter / (2 * n_thin))
 
   age_estimates <- object[["calendar_ages"]]
-  i <- (n_burn + 1):nrow(age_estimates)
+  i <- round(seq(n_burn + 1, nrow(age_estimates), length.out = n_draws))
   ages <- t(age_estimates[i, ])
 
   structure(ages, class = c("Ages", class(ages)))
