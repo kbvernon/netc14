@@ -128,7 +128,7 @@ nn_carbon <- torch::nn_module(
     self$start + self$n_years * torch::torch_cumsum(deltas, dim = 1) / total
   },
   mixture = function() {
-    logits <- self$logits
+    logits <- self$logits / self$pi
     deltas <- self$deltas
     errors <- self$errors
 
@@ -140,7 +140,7 @@ nn_carbon <- torch::nn_module(
     }
 
     # constrain to parameter space
-    weights <- torch::nnf_contrib_sparsemax(logits / self$pi)
+    weights <- torch::nnf_contrib_sparsemax(logits)
     means <- self$bound_means(deltas)
     errors <- torch::torch_exp(errors)
 
