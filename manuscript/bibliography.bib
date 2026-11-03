@@ -683,3 +683,142 @@
   publisher = {Curran Associates, Inc.}
 }
 
+@article{vehtari-etal-2017,
+  title = {Practical {{Bayesian}} Model Evaluation Using Leave-One-out Cross-Validation and {{WAIC}}},
+  author = {Vehtari, Aki and Gelman, Andrew and Gabry, Jonah},
+  year = 2017,
+  month = sep,
+  journal = {Statistics and Computing},
+  volume = {27},
+  number = {5},
+  pages = {1413--1432},
+  issn = {1573-1375},
+  doi = {10.1007/s11222-016-9696-4},
+  abstract = {Leave-one-out cross-validation (LOO) and the widely applicable information criterion (WAIC) are methods for estimating pointwise out-of-sample prediction accuracy from a fitted Bayesian model using the log-likelihood evaluated at the posterior simulations of the parameter values. LOO and WAIC have various advantages over simpler estimates of predictive error such as AIC and DIC but are less used in practice because they involve additional computational steps. Here we lay out fast and stable computations for LOO and WAIC that can be performed using existing simulation draws. We introduce an efficient computation of LOO using Pareto-smoothed importance sampling (PSIS), a new procedure for regularizing importance weights. Although WAIC is asymptotically equal to LOO, we demonstrate that PSIS-LOO is more robust in the finite case with weak priors or influential observations. As a byproduct of our calculations, we also obtain approximate standard errors for estimated predictive errors and for comparison of predictive errors between two models. We implement the computations in an R package called loo and demonstrate using models fit with the Bayesian inference package Stan.}
+}
+
+@article{vehtari-etal-2021,
+  title = {Rank-Normalization, Folding, and Localization: {{An}} Improved \$\textbackslash widehat\{{{R}}\}\$ for Assessing Convergence of {{MCMC}}},
+  author = {Vehtari, Aki and Gelman, Andrew and Simpson, Daniel and Carpenter, Bob and Bürkner, Paul-Christian},
+  year = 2021,
+  month = jun,
+  journal = {Bayesian Analysis},
+  volume = {16},
+  number = {2},
+  pages = {667--718},
+  doi = {10.1214/20-BA1221},
+  abstract = {Markov chain Monte Carlo is a key computational tool in Bayesian statistics, but it can be challenging to monitor the convergence of an iterative stochastic algorithm. In this paper we show that the convergence diagnostic Rˆ of Gelman and Rubin (1992) has serious flaws. Traditional Rˆ will fail to correctly diagnose convergence failures when the chain has a heavy tail or when the variance varies across the chains. In this paper we propose an alternative rank-based diagnostic that fixes these problems. We also introduce a collection of quantile-based local efficiency measures, along with a practical approach for computing Monte Carlo error estimates for quantiles. We suggest that common trace plots should be replaced with rank plots from multiple chains. Finally, we give recommendations for how these methods should be used in practice.}
+}
+
+@article{scott-1979,
+  title = {On Optimal and Data-Based Histograms},
+  author = {Scott, David W.},
+  year = 1979,
+  month = dec,
+  journal = {Biometrika},
+  volume = {66},
+  number = {3},
+  pages = {605--610},
+  issn = {0006-3444},
+  doi = {10.1093/biomet/66.3.605},
+  urldate = {2026-11-02},
+  abstract = {In this paper the formula for the optimal histogram bin width is derived which asymptotically minimizes the integrated mean squared error. Monte Carlo methods are used to verify the usefulness of this formula for small samples. A data-based procedure for choosing the bin width parameter is proposed, which assumes a Gaussian reference standard and requires only the sample size and an estimate of the standard deviation. The sensitivity of the procedure is investigated using several probability models which violate the Gaussian assumption.}
+}
+
+@article{miller-harrison-2014,
+  title = {Inconsistency of {{Pitman-Yor}} Process Mixtures for the Number of Components},
+  author = {Miller, Jeffrey W. and Harrison, Matthew T.},
+  year = 2014,
+  journal = {Journal of Machine Learning Research},
+  volume = {15},
+  number = {96},
+  pages = {3333--3370}
+}
+
+@inproceedings{ji-etal-2010,
+  title = {{{CDP}} Mixture Models for Data Clustering},
+  booktitle = {2010 20th {{International Conference}} on {{Pattern Recognition}}},
+  author = {Ji, Y. and Lin, T. and Zha, H.},
+  year = 2010,
+  month = aug,
+  pages = {637--640},
+  doi = {10.1109/ICPR.2010.161},
+  abstract = {In Dirichlet process (DP) mixture models, the number of components is implicitly determined by the sampling parameters of Dirichlet process. However, this kind of models usually produces lots of small mixture components when modeling real-world data, especially high-dimensional data. In this paper, we propose a new class of Dirichlet process mixture models with some constrained principles, named constrained Dirichlet process (CDP) mixture models. Based on general DP mixture models, we add a resampling step to obtain latent parameters. In this way, CDP mixture models can suppress noise and generate the compact patterns of the data. Experimental results on data clustering show the remarkable performance of the CDP mixture models.},
+  isbn = {1051-4651},
+  keywords = {Bayesian methods,Clustering,Computational modeling,Computer vision,Data models,Dirichlet process,Dirichlet process mixture models,Gaussian mixture models,Inference algorithms,Motion segmentation,Noise}
+}
+
+@inproceedings{cai-etal-2021,
+  title = {Finite Mixture Models Do Not Reliably Learn the Number of Components},
+  booktitle = {Proceedings of the 38th International Conference on Machine Learning},
+  author = {Cai, Diana and Campbell, Trevor and Broderick, Tamara},
+  editor = {Meila, Marina and Zhang, Tong},
+  year = 2021,
+  month = jul,
+  series = {Proceedings of Machine Learning Research},
+  volume = {139},
+  pages = {1158--1169},
+  publisher = {PMLR},
+  abstract = {Scientists and engineers are often interested in learning the number of subpopulations (or components) present in a data set. A common suggestion is to use a finite mixture model (FMM) with a prior on the number of components. Past work has shown the resulting FMM component-count posterior is consistent; that is, the posterior concentrates on the true, generating number of components. But consistency requires the assumption that the component likelihoods are perfectly specified, which is unrealistic in practice. In this paper, we add rigor to data-analysis folk wisdom by proving that under even the slightest model misspecification, the FMM component-count posterior diverges: the posterior probability of any particular finite number of components converges to 0 in the limit of infinite data. Contrary to intuition, posterior-density consistency is not sufficient to establish this result. We develop novel sufficient conditions that are more realistic and easily checkable than those common in the asymptotics literature. We illustrate practical consequences of our theory on simulated and real data.}
+}
+
+@article{dennett-1991,
+  title = {Real Patterns},
+  author = {Dennett, Daniel C.},
+  year = 1991,
+  journal = {The Journal of Philosophy},
+  volume = {88},
+  number = {1},
+  eprint = {2027085},
+  eprinttype = {jstor},
+  pages = {27--51},
+  publisher = {Journal of Philosophy, Inc.},
+  issn = {0022362X},
+  doi = {10.2307/2027085},
+  urldate = {2026-11-03}
+}
+
+@article{chaitin-1975,
+  title = {Randomness and Mathematical Proof},
+  author = {Chaitin, Gregory J.},
+  year = 1975,
+  journal = {Scientific American},
+  volume = {232},
+  number = {5},
+  eprint = {24949798},
+  eprinttype = {jstor},
+  pages = {47--52},
+  publisher = {Scientific American, a division of Nature America, Inc.},
+  issn = {00368733, 19467087},
+  urldate = {2026-11-03}
+}
+
+@article{wade-inacio-2025,
+  title = {Bayesian Dependent Mixture Models: {{A}} Predictive Comparison and Survey},
+  author = {Wade, Sara and Inácio, Vanda},
+  year = 2025,
+  journal = {Statistical Science},
+  volume = {40},
+  number = {1},
+  pages = {81--108},
+  publisher = {Institute of Mathematical Statistics},
+  doi = {10.1214/24-STS966},
+  abstract = {For exchangeable data, mixture models are an extremely useful tool for density estimation due to their attractive balance between smoothness and flexibility. When additional covariate information is present, mixture models can be extended for flexible regression by modeling the mixture parameters, namely, the weights and atoms, as functions of the covariates. These types of models are interpretable and highly flexible, allowing not only the mean but the whole density of the response to change with the covariates. This article reviews Bayesian covariate-dependent mixture models, focusing on nonparametric constructions which we broadly organize into into three categories: (1) joint models of the responses and covariates, (2) conditional models with single-weights and covariate-dependent atoms, and (3) conditional models with covariate-dependent weights. The diversity and variety of the available models in the literature raises the question of how to choose among them for the application at hand. We attempt to shed light on this question through a careful analysis of the predictive equations for the conditional mean and density function as well as predictive comparisons in a variety of simulated data examples.},
+  keywords = {density regression,dependent Dirichlet process,mixture of experts,Nonparametric regression,stick-breaking representation}
+}
+
+@article{timpson-etal-2020,
+  title = {Directly Modelling Population Dynamics in the {{South American Arid Diagonal}} Using {{14C}} Dates},
+  author = {Timpson, Adrian and Barberena, Ramiro and Thomas, Mark G. and Méndez, César and Manning, Katie},
+  year = 2020,
+  month = nov,
+  journal = {Philosophical Transactions of the Royal Society B: Biological Sciences},
+  volume = {376},
+  number = {1816},
+  pages = {20190723},
+  issn = {0962-8436},
+  doi = {10.1098/rstb.2019.0723},
+  urldate = {2026-03-03},
+  abstract = {Large anthropogenic 14C datasets are widely used to generate summed probability distributions (SPDs) as a proxy for past human population levels. However, SPDs are a poor proxy when datasets are small, bearing little relationship to true population dynamics. Instead, more robust inferences can be achieved by directly modelling the population and assessing the model likelihood given the data. We introduce the R package ADMUR which uses a continuous piecewise linear (CPL) model of population change, calculates the model likelihood given a 14C dataset, estimates credible intervals using Markov chain Monte Carlo, applies a goodness-of-fit test, and uses the Schwarz Criterion to compare CPL models. We demonstrate the efficacy of this method using toy data, showing that spurious dynamics are avoided when sample sizes are small, and true population dynamics are recovered as sample sizes increase. Finally, we use an improved 14C dataset for the South American Arid Diagonal to compare CPL modelling to current simulation methods, and identify three Holocene phases when population trajectory estimates changed from rapid initial growth of 4.15\% per generation to a decline of 0.05\% per generation between 10 821 and 7055 yr BP, then gently grew at 0.58\% per generation until 2500 yr BP.This article is part of the theme issue ‘Cross-disciplinary approaches to prehistoric demography’.}
+}
+
