@@ -83,7 +83,7 @@ relative to this hyperparameter.
 
 ```{r}
 #| label: tuning-grid
-gammas <- 2^seq(-2, 6, by = 0.5)
+gammas <- 2^seq(1, 6, by = 1)
 
 evaluation_grid <- expand.grid(
   n_years = c(500, 2500, 12500),
@@ -238,7 +238,7 @@ write.csv(
 #| label: visualize-tuning-results
 #| code-fold: true
 #| output: false
-x_ticks <- seq(-2, 6)
+x_ticks <- seq(1, 6)
 x_labels <- 2^x_ticks
 xlim <- range(x_ticks)
 
