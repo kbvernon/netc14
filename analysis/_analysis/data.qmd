@@ -85,13 +85,13 @@ pass them to the calibration curve model and have it predict fraction modern
 measurements for those years.
 
 $$
-\mu(t_{i}) \mid t_{i} \sim N(m(t_{i}), s(t_{i})^{2})
+c(t_{i}) \mid t_{i} \sim N(\mu_{c}(t_{i}), \sigma_{c}(t_{i})^{2})
 $$
 
 Finally, we add randomly sampled measurement uncertainty $z_{i}$.
 
 $$
-F_{i} \mid \mu(t_{i}) \sim N(\mu(t_{i}), z_{i}^{2})
+F_{i} \mid c(t_{i}) \sim N(c(t_{i}), z_{i}^{2})
 $$
 
 In R:
@@ -106,10 +106,10 @@ t <- years[j]
 t <- sample(years, size = n, replace = TRUE, prob = v)
 
 # add calibration uncertainty
-xcalcurve <- rnorm(n, mean = mt, sd = st^2)
+xcalcurve <- rnorm(n, mean = mt, sd = st)
 
 # add measurement uncertainty
-Fi <- rnorm(n, mean = xcalcurve, sd = zi^2)
+Fi <- rnorm(n, mean = xcalcurve, sd = zi)
 ```
 
 This and the above `simulate_chronology()` function are based on
@@ -135,12 +135,12 @@ samples
 
 ### Calibrate Samples
 
-Most of the algorithms outlined below rely on the calibrated dates as the main
-data for modeling. These are stored in an $n \times m$ measurement matrix
+Most of the algorithms outlined below rely on the measurement likelihoods as the
+main data for modeling. These are stored in an $n \times m$ measurement matrix
 $\mathbf{M}$ with $n$ samples evaluated over $m$ years.
 
 $$
-\mathrm{M}_{ij} \approx p(F_{i} \mid t_{j}) = N(F_{i} \mid m(t_{j}), s(t_{j})^{2} + z_{i}^{2})
+\mathrm{M}_{ij} \approx p(F_{i} \mid t_{j}) = N(F_{i} \mid \mu_{c}(t_{j}), \sigma_{c}(t_{j})^{2} + z_{i}^{2})
 $$
 
 ```r

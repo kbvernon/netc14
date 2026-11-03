@@ -25,7 +25,7 @@ sample_dates <- function(chronology, n_samples, calibration) {
   # sample tᵢ ~ p(t)
   cal_ages <- inv_transform_sample(chronology, years, n_samples)
 
-  # sample c(tᵢ)|tᵢ ~ N(c(tᵢ), zᵢ²)
+  # sample c(tᵢ)|tᵢ ~ N(μ_c(tᵢ), σ_c(tᵢ)²)
   i <- match(cal_ages, calibration[["cal_age"]])
   xcalcurve <- rnorm(
     n_samples,

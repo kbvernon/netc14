@@ -3,12 +3,12 @@
 According to the generative model, $n$ years $t_{1}, ..., t_{n}$ are sampled
 from the underlying age distribution $p(t)$, what we refer to in the code as a
 "chronology". Then fraction modern measurements $F_{i}$ are sampled from the
-calibration curve $\mu(t)$ evaluated at those ages. Formally,
+calibration curve $c(t)$ evaluated at those ages. Formally,
 
 $$
 \begin{aligned}
 t_{1}, ..., t_{n} &\sim p(t) \\
-F_{i} &\sim N(\mu(t_{i}), z_{i}^{2})
+F_{i} &\sim N(c(t_{i}), z_{i}^{2})
 \end{aligned}
 $$
 
