@@ -4,8 +4,6 @@
 #' Gaussian Mixture Model.
 #'
 #' @param calibrated_dates a `CalGrid` matrix of calibrated dates
-#' @param max_clusters maximum number of Gaussian clusters to initialize
-#'   (default is 35)
 #' @param w_gauss weight for Gaussian noise applied to parameters (default 0.02)
 #' @param gamma weight for the precision penalty in the loss (default 16);
 #'   the penalty is `gamma * n_years * sum(1 / errors^2)`, so larger values push
@@ -26,7 +24,6 @@
 #'   and Gaussian noise on parameters for uncertainty estimation.
 netc <- function(
   calibrated_dates,
-  max_clusters = 35,
   w_gauss = 0.02,
   gamma = 16,
   temperature = 0.6,
@@ -41,8 +38,7 @@ netc <- function(
   start <- attr(calibrated_dates, "start")
   end <- attr(calibrated_dates, "end")
   n_samples <- nrow(calibrated_dates)
-  n_years <- ncol(calibrated_dates)
-  n_clusters <- min(round(sqrt(n_years)), max_clusters)
+  n_clusters <- ceiling(2 * n_samples^(1 / 3))
 
   model <- nn_carbon(start, end, n_clusters, n_samples, w_gauss, temperature)
   floss <- nn_loss(calibrated_dates, gamma)
