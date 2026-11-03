@@ -110,7 +110,7 @@ add_grid <- function(
 #'   the top-left corner of the legend box. Default is `NULL` (no title).
 #' @param title.col color of the legend title. Default is gray.
 #' @param title.cex numeric scalar, character expansion factor for the legend
-#'   title. Default is `0.9`.
+#'   title. Default is `par("cex.main")`, matching plot titles.
 #'
 #' @return The list returned by [legend()], invisibly.
 add_legend <- function(
@@ -120,13 +120,13 @@ add_legend <- function(
   cex = 0.8,
   y.intersp = 1.2,
   title.col = coolors("gray"),
-  title.cex = 0.9
+  title.cex = par("cex.main")
 ) {
   lg <- legend(..., bty = bty, cex = cex, y.intersp = y.intersp)
 
   if (!is.null(title)) {
     text(
-      x = lg[["rect"]][["left"]] + 0.01,
+      x = lg[["rect"]][["left"]],
       y = lg[["rect"]][["top"]] + 0.01,
       labels = title,
       adj = 0,
