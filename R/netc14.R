@@ -10,7 +10,7 @@
 #' @param gamma weight for the precision penalty in the loss (default 16);
 #'   the penalty is `gamma * n_years * sum(1 / errors^2)`, so larger values push
 #'   components toward wider, lower-precision shapes
-#' @param pi sparsemax temperature applied to mixture logits (default 1.0);
+#' @param temperature sparsemax temperature applied to mixture logits (default 0.6);
 #'   smaller values produce sparser weights
 #' @param n_epochs number of training epochs (default 512)
 #' @param learning_rate learning rate for Adam optimizer (default 0.005)
@@ -29,7 +29,7 @@ netc <- function(
   max_clusters = 35,
   w_gauss = 0.02,
   gamma = 16,
-  pi = 1.0,
+  temperature = 0.6,
   n_epochs = 512,
   learning_rate = 0.005,
   seed = STARTREK
@@ -44,7 +44,7 @@ netc <- function(
   n_years <- ncol(calibrated_dates)
   n_clusters <- min(round(sqrt(n_years)), max_clusters)
 
-  model <- nn_carbon(start, end, n_clusters, n_samples, w_gauss, pi)
+  model <- nn_carbon(start, end, n_clusters, n_samples, w_gauss, temperature)
   floss <- nn_loss(calibrated_dates, gamma)
   optimizer <- torch::optim_adam(model$parameters, lr = learning_rate)
 
@@ -94,9 +94,16 @@ netc <- function(
 # torch module: forward pass for the model
 nn_carbon <- torch::nn_module(
   "NetC14",
-  initialize = function(start, end, n_clusters, n_samples, w_gauss, pi) {
+  initialize = function(
+    start,
+    end,
+    n_clusters,
+    n_samples,
+    w_gauss,
+    temperature
+  ) {
     self$w_gauss <- w_gauss
-    self$pi <- pi
+    self$temperature <- temperature
     self$n_clusters <- n_clusters
 
     # initialize parameters
@@ -128,7 +135,7 @@ nn_carbon <- torch::nn_module(
     self$start + self$n_years * torch::torch_cumsum(deltas, dim = 1) / total
   },
   mixture = function() {
-    logits <- self$logits / self$pi
+    logits <- self$logits / self$temperature
     deltas <- self$deltas
     errors <- self$errors
 

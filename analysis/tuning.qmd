@@ -11,8 +11,8 @@ published-title: "COMPILED"
 **Goal:** Optimize the NetC14 hyperparameter $\gamma$ - the weight on the
 precision penalty - with respect to the held-out likelihood of radiocarbon
 samples. Because this criterion uses only the observed samples, it can also be
-computed on real data where the true ages and density are unknown. The sparsemax
-temperature $\pi$ is fixed at 1, since it overlaps with $\gamma$ in promoting
+computed on real data where the true ages and density are unknown. The Sparsemax
+temperature $\pi$ is fixed at 0.6, since it overlaps with $\gamma$ in promoting
 sparsity, and tuning both leaves the optimum poorly identified.
 
 **Data:** For model tuning, data are simulated according to the generative
@@ -157,7 +157,7 @@ tuning_results <- parLapplyLB(clusters, seq_len(n_scenarios), \(i) {
     n_active <- c()
 
     for (fold in folds) {
-      mdl <- netc(calibrated_dates[-fold, ], gamma = gammas[k], pi = 1)
+      mdl <- netc(calibrated_dates[-fold, ], gamma = gammas[k])
       ll <- logLik(mdl, calibrated_dates[fold, , drop = FALSE])
       heldout <- heldout + ll
       n_active <- c(n_active, count_components(mdl))
