@@ -210,3 +210,102 @@ dev.off()
 ![](/figures/evaluate-objectives.svg)
 :::
 
+**Mixture Components**
+
+Boxes show the true number of clusters minus the effective number of components
+across simulations for each sample size, pooled over the true number of clusters
+and the number of years. Positive values indicate too few components and negative
+values too many. Each model counts components by its own rule.
+
+```{r}
+#| label: plot-evaluate-components
+#| code-fold: true
+#| output: false
+mixtures <- c("BGMM", "DPMM", "NetC14")
+
+distributions <- c(
+  "(A) Gaussian" = "gaussian",
+  "(B) Skewed" = "skewed",
+  "(C) Uniform" = "uniform"
+)
+
+components <- transform(evaluation_results, error = n_clusters - e_clusters)
+
+sample_sizes <- sort(unique(components[["n_samples"]]))
+y_ticks <- seq_along(sample_sizes)
+x_ticks <- pretty(components[["error"]])
+offsets <- c(0.25, 0, -0.25)
+
+svglite(
+  filename = "figures/evaluate-components.svg",
+  width = 6.5,
+  height = 3
+)
+
+layout(matrix(1:3, nrow = 1), widths = c(2.3, 1.8, 2.4))
+
+par(defaults)
+
+for (k in seq_along(distributions)) {
+  left <- if (k == 1) 0.55 else 0.05
+  right <- if (k == 3) 0.65 else 0.05
+
+  par(mai = c(0.5, left, 0.25, right))
+
+  new_plot(range(x_ticks), range(y_ticks) + c(-0.35, 0.35))
+  add_grid(h = y_ticks[-1] - 0.5, v = x_ticks)
+  abline(v = 0, col = coolors("gray"), lwd = 0.5)
+
+  for (m in seq_along(mixtures)) {
+    i <- with(
+      components,
+      model == mixtures[[m]] & distribution == distributions[[k]]
+    )
+
+    boxplot(
+      error ~ n_samples,
+      data = components[i, ],
+      at = y_ticks + offsets[[m]],
+      horizontal = TRUE,
+      add = TRUE,
+      axes = FALSE,
+      boxwex = 0.2,
+      col = theme(mixtures[[m]], shade = -0.6),
+      border = theme(mixtures[[m]]),
+      lwd = 0.5,
+      whisklty = 1,
+      staplelty = 0,
+      outpch = 16,
+      outcex = 0.3
+    )
+  }
+
+  x_axis(at = x_ticks)
+  if (k == 1) {
+    y_axis(at = y_ticks, labels = sample_sizes)
+    y_label("N Samples")
+  }
+  if (k == 2) {
+    x_label("True − Effective Components")
+  }
+  if (k == 3) {
+    text(
+      x = par("usr")[[2]],
+      y = max(y_ticks) + offsets,
+      labels = mixtures,
+      col = theme(mixtures),
+      pos = 4,
+      xpd = NA,
+      cex = 0.8
+    )
+  }
+  main(names(distributions)[k], line = 0.3)
+}
+
+dev.off()
+```
+
+::: {#evaluate-components}
+![](/figures/evaluate-components.svg)
+:::
+
