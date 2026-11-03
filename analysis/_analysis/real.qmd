@@ -137,11 +137,11 @@ for (i in seq_along(results)) {
   new_plot(c(0, 1), c(0, 1))
   add_legend(
     "center",
-    legend = c("SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
-    col = theme("SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
-    text.col = theme("SPD", "CKDE", "BGMM", "DPMM", "NetC14"),
+    legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+    col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
+    text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
     lwd = rep(1.2, 5),
-    lty = c("dotted", "solid", "solid", "solid", "solid")
+    lty = c("solid", "solid", "solid", "solid", "dotted")
   )
 
   dev.off()
