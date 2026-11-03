@@ -45,62 +45,154 @@ aggregate(
 )
 ```
 
-**Number of Samples**
+**Simulation Parameters**
 
-Points are median values across simulations for each sample size.
+Points are median values across simulations for each level of a simulation
+parameter. All panels share the same axes.
 
 ```{r}
-#| label: plot-evaluate-n-samples
+#| label: plot-evaluate-objectives
 #| code-fold: true
 #| output: false
-xy <- aggregate(
-  cbind(tvd, recovery) ~ model + n_samples,
-  FUN = median,
-  data = evaluation_results
+panels <- list(
+  n_samples = list(
+    title = "(A) N Samples",
+    levels = c(50, 250, 1250),
+    labels = c(50, 250, 1250),
+    cex = c(0.9, 1.2, 1.6),
+    pch = c(21, 21, 21)
+  ),
+  n_years = list(
+    title = "(B) N Years",
+    levels = c(500, 2500, 12500),
+    labels = c(500, 2500, 12500),
+    cex = c(0.9, 1.2, 1.6),
+    pch = c(21, 21, 21)
+  ),
+  n_clusters = list(
+    title = "(C) N Clusters",
+    levels = c(1, 3, 9),
+    labels = c(1, 3, 9),
+    cex = c(0.9, 1.2, 1.6),
+    pch = c(21, 21, 21)
+  ),
+  distribution = list(
+    title = "(D) Distribution",
+    levels = c("gaussian", "skewed", "uniform"),
+    labels = c("Gaussian", "Skewed", "Uniform"),
+    cex = c(1.2, 1.2, 1.2),
+    pch = c(21, 24, 22)
+  )
 )
+
+xy <- sapply(
+  names(panels),
+  \(nm) {
+    aggregate(
+      evaluation_results[c("tvd", "recovery")],
+      by = evaluation_results[c("model", nm)],
+      FUN = median
+    )
+  },
+  simplify = FALSE
+)
+
+xlim <- range(unlist(lapply(xy, `[[`, "tvd")))
+ylim <- range(unlist(lapply(xy, `[[`, "recovery")))
 
 svglite(
-  filename = "figures/evaluate-objectives-nsamples.svg",
-  width = 5,
-  height = 3
+  filename = "figures/evaluate-objectives.svg",
+  width = 6.5,
+  height = 5.3
 )
 
-xlim <- range(xy[["tvd"]])
-ylim <- range(xy[["recovery"]])
-
-layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
+layout(
+  matrix(c(1, 2, 5, 3, 4, 5), nrow = 2, byrow = TRUE),
+  widths = c(2.85, 2.6, 0.8),
+  heights = c(2.6, 2.65)
+)
 
 par(defaults)
-par(mai = c(0.5, 0.5, 0, 0))
+par(omi = c(0.25, 0.2, 0, 0.05))
 
-new_plot(xlim, ylim)
-add_grid()
+for (k in seq_along(panels)) {
+  nm <- names(panels)[k]
+  p <- panels[[k]]
+  is_left <- k %in% c(1, 3)
+  is_bottom <- k %in% c(3, 4)
 
-for (mdl in unique(xy[["model"]])) {
-  i <- which(xy[["model"]] == mdl)
-  x <- xy[["tvd"]][i]
-  y <- xy[["recovery"]][i]
-  z <- xy[["n_samples"]][i]
+  par(
+    mai = c(
+      if (is_bottom) 0.2 else 0.15,
+      if (is_left) 0.3 else 0.05,
+      0.05,
+      0.05
+    )
+  )
 
-  clr <- theme(mdl)
-  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
-  cex <- c("50" = 1.0, "250" = 1.3, "1250" = 1.7)[as.character(z)]
+  new_plot(xlim, ylim)
+  add_grid()
 
-  lines(x, y, col = clr, lwd = 0.5)
-  points(x, y, pch = 21, col = clr, bg = cbg, cex = cex)
+  for (mdl in unique(xy[[nm]][["model"]])) {
+    i <- which(xy[[nm]][["model"]] == mdl)
+    x <- xy[[nm]][["tvd"]][i]
+    y <- xy[[nm]][["recovery"]][i]
+    j <- match(as.character(xy[[nm]][[nm]][i]), p$levels)
+
+    clr <- theme(mdl)
+    cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
+
+    lines(x, y, col = clr, lwd = 0.5)
+    points(x, y, pch = p$pch[j], col = clr, bg = cbg, cex = p$cex[j])
+  }
+
+  if (is_bottom) {
+    x_axis()
+  }
+  if (is_left) {
+    y_axis()
+  }
+
+  if (k == 3) {
+    mtext(
+      "Summarizing [TVD]",
+      side = 1,
+      line = 1.5,
+      at = par("usr")[2],
+      xpd = NA,
+      col = par("col.lab"),
+      cex = par("cex.lab")
+    )
+
+    mtext(
+      "Calibrating [Recovery]",
+      side = 2,
+      line = 1.8,
+      at = par("usr")[4],
+      xpd = NA,
+      col = par("col.lab"),
+      cex = par("cex.lab")
+    )
+  }
+
+  add_legend(
+    x = "topleft",
+    legend = p$labels,
+    pt.bg = coolors("gray", shade = -0.6),
+    col = coolors("gray"),
+    text.col = coolors("gray"),
+    pch = p$pch,
+    pt.cex = p$cex,
+    inset = c(0, 0.06),
+    title = p$title
+  )
 }
-
-x_axis()
-y_axis()
-
-x_label("Summarizing [TVD]")
-y_label("Calibrating [Recovery]")
 
 par(mai = rep(0, 4))
 new_plot(c(0, 1), c(0, 1))
 add_legend(
   x = 0,
-  y = 1,
+  y = 0.6,
   legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
   pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
   col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
@@ -111,192 +203,10 @@ add_legend(
   title = "Models"
 )
 
-add_legend(
-  x = 0,
-  y = 0.5,
-  legend = c(50, 250, 1250),
-  pt.bg = coolors("gray", shade = -0.6),
-  col = coolors("gray"),
-  text.col = coolors("gray"),
-  pch = 21,
-  pt.cex = c(1.0, 1.3, 1.7),
-  title = "N Samples"
-)
-
 dev.off()
 ```
 
-::: {#evaluate-objectives-nsamples}
-![](/figures/evaluate-objectives-nsamples.svg){width=75%}
+::: {#evaluate-objectives}
+![](/figures/evaluate-objectives.svg)
 :::
 
-**Number of Clusters**
-
-Points are median values across simulations for each number of clusters.
-
-```{r}
-#| label: plot-evaluate-n-clusters
-#| code-fold: true
-#| output: false
-xy <- aggregate(
-  cbind(tvd, recovery) ~ model + n_clusters,
-  FUN = median,
-  data = evaluation_results
-)
-
-svglite(
-  filename = "figures/evaluate-objectives-nclusters.svg",
-  width = 5,
-  height = 3
-)
-
-xlim <- range(xy[["tvd"]])
-ylim <- range(xy[["recovery"]])
-
-layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
-
-par(defaults)
-par(mai = c(0.5, 0.5, 0, 0))
-
-new_plot(xlim, ylim)
-add_grid()
-
-for (mdl in unique(xy[["model"]])) {
-  i <- which(xy[["model"]] == mdl)
-  x <- xy[["tvd"]][i]
-  y <- xy[["recovery"]][i]
-  z <- xy[["n_clusters"]][i]
-
-  clr <- theme(mdl)
-  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
-  cex <- c("1" = 1.0, "3" = 1.3, "9" = 1.7)[as.character(z)]
-
-  lines(x, y, col = clr, lwd = 0.5)
-  points(x, y, pch = 21, col = clr, bg = cbg, cex = cex)
-}
-
-x_axis()
-y_axis()
-
-x_label("Summarizing [TVD]")
-y_label("Calibrating [Recovery]")
-
-par(mai = rep(0, 4))
-new_plot(c(0, 1), c(0, 1))
-add_legend(
-  x = 0,
-  y = 1,
-  legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
-  pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
-  col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
-  text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
-  pch = 21,
-  pt.cex = 1.1,
-  lwd = 0.5,
-  title = "Models"
-)
-
-add_legend(
-  x = 0,
-  y = 0.5,
-  legend = c(1, 3, 9),
-  pt.bg = coolors("gray", shade = -0.6),
-  col = coolors("gray"),
-  text.col = coolors("gray"),
-  pch = 21,
-  pt.cex = c(1.0, 1.3, 1.7),
-  title = "N Clusters"
-)
-
-dev.off()
-```
-
-::: {#evaluate-objectives-nclusters}
-![](/figures/evaluate-objectives-nclusters.svg){width=75%}
-:::
-
-**Distribution**
-
-Points are median values across simulations for each distribution.
-
-```{r}
-#| label: plot-evaluate-distribution
-#| code-fold: true
-#| output: false
-xy <- aggregate(
-  cbind(tvd, recovery) ~ model + distribution,
-  FUN = median,
-  data = evaluation_results
-)
-
-shapes <- c(gaussian = 21, skewed = 24, uniform = 22)
-
-svglite(
-  filename = "figures/evaluate-objectives-distribution.svg",
-  width = 5,
-  height = 3
-)
-
-xlim <- range(xy[["tvd"]])
-ylim <- range(xy[["recovery"]])
-
-layout(matrix(c(1, 0, 2), ncol = 3), widths = c(1, 0.01, 0.23))
-
-par(defaults)
-par(mai = c(0.5, 0.5, 0, 0))
-
-new_plot(xlim, ylim)
-add_grid()
-
-for (mdl in unique(xy[["model"]])) {
-  i <- which(xy[["model"]] == mdl)
-  x <- xy[["tvd"]][i]
-  y <- xy[["recovery"]][i]
-  z <- xy[["distribution"]][i]
-
-  clr <- theme(mdl)
-  cbg <- if (mdl == "SPD") "#FFFFFF" else theme(mdl, shade = -0.6)
-
-  lines(x, y, col = clr, lwd = 0.5)
-  points(x, y, pch = shapes[z], col = clr, bg = cbg, cex = 1.3)
-}
-
-x_axis()
-y_axis()
-
-x_label("Summarizing [TVD]")
-y_label("Calibrating [Recovery]")
-
-par(mai = rep(0, 4))
-new_plot(c(0, 1), c(0, 1))
-add_legend(
-  x = 0,
-  y = 1,
-  legend = c("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
-  pt.bg = c(theme("BGMM", "CKDE", "DPMM", "NetC14", shade = -0.6), "#FFFFFF"),
-  col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
-  text.col = theme("BGMM", "CKDE", "DPMM", "NetC14", "SPD"),
-  pch = 21,
-  pt.cex = 1.1,
-  lwd = 0.5,
-  title = "Models"
-)
-
-add_legend(
-  x = 0,
-  y = 0.5,
-  legend = c("Gaussian", "Skewed", "Uniform"),
-  pt.bg = coolors("gray", shade = -0.6),
-  col = coolors("gray"),
-  text.col = coolors("gray"),
-  pch = shapes,
-  pt.cex = 1.1,
-  title = "Distribution"
-)
-
-dev.off()
-```
-
-::: {#evaluate-objectives-distribution}
-![](/figures/evaluate-objectives-distribution.svg){width=75%}
-:::
